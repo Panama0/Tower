@@ -15,25 +15,72 @@ EntityHandle :: struct {
 }
 
 Entity :: struct {
-    handle:         EntityHandle,
-    kind:           EntityKind,
+    handle:              EntityHandle,
+    kind:                EntityKind,
 
     // todo, move this into static entity data
-    update_proc:    proc(_: ^Entity),
-    draw_proc:      proc(_: Entity, renderer: ^sdl3.Renderer),
+    update_proc:         proc(_: ^Entity),
+    draw_proc:           proc(_: Entity, renderer: ^sdl3.Renderer),
 
-    // big sloppy entity state dump.
-    // add whatever you need in here.
-    pos:            Vec2,
-    rotation:       f32,
-    sprite:         SpriteName,
-    anim_index:     int,
-    loop:           bool,
-    frame_duration: f32,
+    // state
+    pos:                 Vec2,
+    rotation:            f32,
+    sprite:              SpriteName,
+    // anim
+    anim_index:          int,
+    loop:                bool,
+    frame_duration:      u64, // ms
+    next_frame_end_time: u64,
+
+    // user state
 }
 
 zero_entity: Entity
 
+entity_set_animation :: proc(
+    e: ^Entity,
+    sprite: SpriteName,
+    frame_duration: u64,
+    looping := true,
+) {
+
+    if e.sprite != sprite {
+        e.sprite = sprite
+        e.loop = looping
+        e.frame_duration = frame_duration
+        e.anim_index = 0
+        e.next_frame_end_time = 0
+    }
+}
+
+entity_update_animation :: proc(e: ^Entity) {
+    if e.frame_duration == 0 do return
+
+    frame_count := sprite_data[e.sprite].frame_count
+
+    is_playing := true
+    if !e.loop {
+        is_playing = e.anim_index + 1 <= frame_count
+    }
+
+    if is_playing {
+
+        if e.next_frame_end_time == 0 {
+            e.next_frame_end_time = sdl3.GetTicks() + e.frame_duration
+        }
+
+        if sdl3.GetTicks() >= e.next_frame_end_time {
+            e.anim_index += 1
+            e.next_frame_end_time = 0
+
+            if e.anim_index >= frame_count {
+                if e.loop {
+                    e.anim_index = 0
+                }
+            }
+        }
+    }
+}
 
 entity_create :: proc(kind: EntityKind) -> ^Entity {
     index := -1

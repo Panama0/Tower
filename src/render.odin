@@ -113,6 +113,8 @@ load_sprites_and_atlas :: proc(renderer: ^sdl3.Renderer) {
         log.fatal("Failed to create atlas texture: %v", sdl3.GetError())
     }
 
+    sdl3.SetTextureScaleMode(tex, .PIXELART)
+
     state.atlas = {
         w       = SIZE,
         h       = SIZE,
@@ -120,11 +122,4 @@ load_sprites_and_atlas :: proc(renderer: ^sdl3.Renderer) {
     }
 
     sdl3.SavePNG(atlas_surface, "res/atlas.png")
-}
-
-draw_ent :: proc(e: Entity, renderer: ^sdl3.Renderer) {
-    spr := state.sprites[e.sprite]
-    dest := sdl3.FRect{e.pos.x, e.pos.y, f32(spr.width), f32(spr.height)}
-
-    sdl3.RenderTexture(renderer, state.atlas.texture, &spr.uv, &dest)
 }
