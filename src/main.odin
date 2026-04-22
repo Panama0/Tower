@@ -17,10 +17,14 @@ SpriteName :: enum {
     tile3,
     tile4,
     animtest,
+    knight_idle,
+    knight_walk,
 }
 
 sprite_data: [SpriteName]Sprite_Data = #partial {
     .animtest = {frame_count = 3},
+    .knight_idle = {frame_count = 7},
+    .knight_walk = {frame_count = 8},
 }
 
 // maybe not needed - just make an int?
@@ -44,15 +48,15 @@ State :: struct {
 }
 
 GameState :: struct {
-    ticks:             u64,
-    game_time_elapsed: f64,
-    cam_pos:           Vec2,
-    entity_top_count:  int,
-    latest_entity_id:  int,
-    entities:          [MAX_ENTITIES]Entity,
-    entity_free_list:  [dynamic]int,
-    player_handle:     EntityHandle,
-    scratch:           struct {
+    ticks:            u64,
+    // game_time_elapsed: f64,
+    cam_pos:          Vec2,
+    entity_top_count: int,
+    latest_entity_id: int,
+    entities:         [MAX_ENTITIES]Entity,
+    entity_free_list: [dynamic]int,
+    player_handle:    EntityHandle,
+    scratch:          struct {
         all_entities: []EntityHandle,
     },
 }
@@ -67,6 +71,7 @@ Action :: enum {
     down,
     exit,
     place_tower,
+    rotate,
 }
 
 action_bindings: map[Bind]Action = {
@@ -76,6 +81,7 @@ action_bindings: map[Bind]Action = {
     {.D, .down} = .right,
     {.ESCAPE, .pressed} = .exit,
     {.M_LEFT, .pressed} = .place_tower,
+    {.R, .pressed} = .rotate,
 }
 
 action_occurred :: proc(action: Action) -> bool {
@@ -86,6 +92,9 @@ EntityKind :: enum {
     nil,
     player,
     tower,
+    spawner,
+    enemy,
+    bullet,
 }
 
 entity_setup :: proc(e: ^Entity, kind: EntityKind) {
@@ -101,25 +110,62 @@ entity_setup :: proc(e: ^Entity, kind: EntityKind) {
         setup_player(e)
     case .tower:
         setup_tower(e)
+    case .spawner:
+        setup_spawner(e)
+    case .enemy:
+        setup_enemy(e)
+    case .bullet:
+        setup_bullet(e)
     }
 }
 
 setup_player :: proc(e: ^Entity) {
     e.kind = .player
     e.pos = {120, 120}
-    e.sprite = .player
 
     e.update_proc = proc(e: ^Entity) {
+        last: Action
+        idle := true
+
+        // input
         input: Vec2
-        if action_occurred(.left) do input.x -= 1.0
-        if action_occurred(.right) do input.x += 1.0
-        if action_occurred(.down) do input.y += 1.0
-        if action_occurred(.up) do input.y -= 1.0
+        if action_occurred(.left) {
+            input.x -= 1.0
+            last = .left
+        }
+
+        if action_occurred(.right) {
+            input.x += 1.0
+            last = .right
+        }
+
+        if action_occurred(.down) {
+            input.y += 1.0
+        }
+
+        if action_occurred(.up) {
+            input.y -= 1.0
+        }
+
         if input != {} {
             input = linalg.normalize(input)
+            idle = false
         }
 
         e.pos += input * 100.0 * state.dt
+
+        // animations
+        if !idle {
+            entity_set_animation(e, .knight_walk, 150)
+            #partial switch last {
+            case .left:
+                e.flip_x = true
+            case .right:
+                e.flip_x = false
+            }
+        } else {
+            entity_set_animation(e, .knight_idle, 150)
+        }
     }
 
     e.draw_proc = proc(e: Entity, renderer: ^sdl3.Renderer) {
@@ -131,9 +177,81 @@ setup_tower :: proc(e: ^Entity) {
     e.kind = .tower
     e.sprite = .tile1
 
+    e.shoot_interval_ms = 300
+
+    e.update_proc = proc(e: ^Entity) {
+        current_time := sdl3.GetTicks()
+        if current_time >= e.next_shot_time {
+            bullet := entity_create(.bullet)
+            bullet.pos = e.pos
+
+            //TODO: make this an enemy!
+            target := player().pos
+
+            bullet.direction = linalg.normalize(target - e.pos)
+            bullet.speed = 200
+
+            e.next_shot_time = current_time + e.shoot_interval_ms
+        }
+    }
 
     e.draw_proc = proc(e: Entity, renderer: ^sdl3.Renderer) {
         draw_ent(e, renderer)
+    }
+}
+
+setup_spawner :: proc(e: ^Entity) {
+    e.kind = .spawner
+    e.sprite = .tile4
+
+    e.spawn_interval_ms = 500
+
+    e.update_proc = proc(e: ^Entity) {
+        current_time := sdl3.GetTicks()
+        if current_time >= e.next_spawn_time {
+            // spawn an enemy
+            enemy := entity_create(.enemy)
+            enemy.pos = e.pos
+
+            // set next spawn time
+            e.next_spawn_time = current_time + e.spawn_interval_ms
+        }
+    }
+
+    e.draw_proc = proc(e: Entity, renderer: ^sdl3.Renderer) {
+        draw_ent(e, renderer)
+    }
+}
+
+setup_enemy :: proc(e: ^Entity) {
+    e.kind = .spawner
+    e.sprite = .animtest
+    entity_set_animation(e, .animtest, 150)
+
+    e.update_proc = proc(e: ^Entity) {
+        // move towards the player
+        player_pos := player().pos
+
+        move_dir := linalg.normalize(player_pos - e.pos)
+
+        e.pos += move_dir * 75 * state.dt
+    }
+
+    e.draw_proc = proc(e: Entity, renderer: ^sdl3.Renderer) {
+        draw_ent(e, renderer)
+    }
+}
+
+setup_bullet :: proc(e: ^Entity) {
+    e.kind = .bullet
+
+    e.update_proc = proc(e: ^Entity) {
+        e.pos += e.direction * e.speed * state.dt
+    }
+
+    e.draw_proc = proc(e: Entity, renderer: ^sdl3.Renderer) {
+        sdl3.SetRenderDrawColor(renderer, 0, 255, 0, 1)
+        sdl3.RenderPoint(renderer, e.pos.x, e.pos.y)
     }
 }
 
@@ -167,14 +285,38 @@ draw_ent :: proc(e: Entity, renderer: ^sdl3.Renderer) {
         dest.w = f32(frame_offset)
     }
 
-    sdl3.RenderTexture(renderer, state.atlas.texture, &src, &dest)
+    // offest destination by pivot
+    pivot_offset := pivot_to_vec(e.draw_pivot)
+    pivot_point := sdl3.FPoint{src.w * pivot_offset.x, src.h * pivot_offset.y}
+
+    dest.x -= dest.w * pivot_offset.x
+    dest.y -= dest.h * pivot_offset.y
+
+    // flip
+    mode: sdl3.FlipMode
+    if e.flip_x do mode |= .HORIZONTAL
+    if e.flip_y do mode |= .VERTICAL
+
+    sdl3.RenderTextureRotated(
+        renderer,
+        state.atlas.texture,
+        &src,
+        &dest,
+        e.rotation_deg,
+        &pivot_point,
+        mode,
+    )
+}
+
+player :: proc() -> ^Entity {
+    return entity_from_handle(state.gs.player_handle)
 }
 
 main :: proc() {
     context.logger = log.create_console_logger()
 
-    WINDOW_WIDTH :: 1280
-    WINDOW_HEIGHT :: 720
+    WINDOW_WIDTH :: 640
+    WINDOW_HEIGHT :: 360
 
     ok := sdl3.Init({.VIDEO})
     if !ok do log.fatalf("Could not initialise SDL: %v", sdl3.GetError())
@@ -201,9 +343,13 @@ main :: proc() {
     // init "renderer"
     load_sprites_and_atlas(renderer)
 
+    // init game stuff
     player := entity_create(.player)
     state.gs.player_handle = player.handle
-    entity_set_animation(player, .animtest, 1000)
+
+    // temp
+    spawner := entity_create(.spawner)
+    spawner.pos = {450, 150}
 
 
     last_tick: u64 = sdl3.GetTicks()
@@ -257,7 +403,11 @@ main :: proc() {
                 &world_y,
             )
 
-            e.pos = grid_get_nearest(GRID_SIZE, {world_x, world_y})
+            e.pos = grid_get_nearest_centre(GRID_SIZE, {world_x, world_y})
+        }
+
+        if action_occurred(.rotate) {
+            player.rotation_deg += 10
         }
 
         // update ent

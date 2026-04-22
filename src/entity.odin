@@ -14,25 +14,64 @@ EntityHandle :: struct {
     id:    int,
 }
 
+
 Entity :: struct {
-    handle:              EntityHandle,
-    kind:                EntityKind,
+    handle:                 EntityHandle,
+    kind:                   EntityKind,
 
     // todo, move this into static entity data
-    update_proc:         proc(_: ^Entity),
-    draw_proc:           proc(_: Entity, renderer: ^sdl3.Renderer),
+    update_proc:            proc(_: ^Entity),
+    draw_proc:              proc(_: Entity, renderer: ^sdl3.Renderer),
 
     // state
-    pos:                 Vec2,
-    rotation:            f32,
-    sprite:              SpriteName,
+    sprite:                 SpriteName,
+    pos:                    Vec2,
+    rotation_deg:           f64,
+    flip_x:                 bool,
+    flip_y:                 bool,
+    draw_pivot:             Pivot,
     // anim
-    anim_index:          int,
-    loop:                bool,
-    frame_duration:      u64, // ms
-    next_frame_end_time: u64,
+    anim_index:             int,
+    loop:                   bool,
+    frame_duration_ms:      u64,
+    next_frame_end_time_ms: u64,
 
     // user state
+    // spawner
+    next_spawn_time:        u64,
+    spawn_interval_ms:      u64,
+    // turret
+    shoot_interval_ms:      u64,
+    next_shot_time:         u64,
+    // bullet?
+    //TODO: make this reusable?
+    direction:              Vec2,
+    speed:                  f32,
+}
+
+Pivot :: enum {
+    centre,
+    top_left,
+    top_right,
+    bottom_left,
+    bottom_right,
+}
+
+pivot_to_vec :: proc(p: Pivot) -> Vec2 {
+    switch p {
+    case .centre:
+        return {0.5, 0.5}
+    case .top_left:
+        return {0.0, 0.0}
+    case .top_right:
+        return {1.0, 0.0}
+    case .bottom_left:
+        return {0.0, 1.0}
+    case .bottom_right:
+        return {1.0, 1.0}
+    }
+
+    return {-1, -1}
 }
 
 zero_entity: Entity
@@ -47,14 +86,14 @@ entity_set_animation :: proc(
     if e.sprite != sprite {
         e.sprite = sprite
         e.loop = looping
-        e.frame_duration = frame_duration
+        e.frame_duration_ms = frame_duration
         e.anim_index = 0
-        e.next_frame_end_time = 0
+        e.next_frame_end_time_ms = 0
     }
 }
 
 entity_update_animation :: proc(e: ^Entity) {
-    if e.frame_duration == 0 do return
+    if e.frame_duration_ms == 0 do return
 
     frame_count := sprite_data[e.sprite].frame_count
 
@@ -65,13 +104,13 @@ entity_update_animation :: proc(e: ^Entity) {
 
     if is_playing {
 
-        if e.next_frame_end_time == 0 {
-            e.next_frame_end_time = sdl3.GetTicks() + e.frame_duration
+        if e.next_frame_end_time_ms == 0 {
+            e.next_frame_end_time_ms = sdl3.GetTicks() + e.frame_duration_ms
         }
 
-        if sdl3.GetTicks() >= e.next_frame_end_time {
+        if sdl3.GetTicks() >= e.next_frame_end_time_ms {
             e.anim_index += 1
-            e.next_frame_end_time = 0
+            e.next_frame_end_time_ms = 0
 
             if e.anim_index >= frame_count {
                 if e.loop {
