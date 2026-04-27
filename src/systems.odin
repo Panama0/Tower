@@ -1,39 +1,67 @@
 package main
 
+import "base:runtime"
+import "core:log"
 import "core:math/linalg"
 import "core:math/rand"
+
 import "ecs"
 import "vendor:sdl3"
 
 
-animation :: proc(e: ecs.Entity) {
+animation :: proc() {
     w := state.gs.world
-    anim := ecs.get_component(w, e, C_Animation)
-    spr := ecs.get_component(w, e, C_Sprite)
 
-    if anim.frame_duration_ms == 0 do return
+    animators := make([dynamic]ecs.Entity, context.temp_allocator)
+    query := ecs.query_mask(w, C_AnimationController, C_Sprite)
+    ecs.get_entities_query(w, query, &animators)
 
-    frame_count := sprite_data[spr.name].frame_count
+    for e in animators {
 
-    is_playing := true
-    if !anim.loop {
-        is_playing = anim.anim_index + 1 <= frame_count
-    }
+        anim := ecs.get_component(w, e, C_AnimationController)
+        spr := ecs.get_component(w, e, C_Sprite)
+        mc := ecs.get_component(w, e, C_MovementController)
 
-    if is_playing {
+        animation_data := sprite_data[spr.name]
+        animation := anim.animations
 
-        if anim.next_frame_end_time_ms == 0 {
-            anim.next_frame_end_time_ms =
-                sdl3.GetTicks() + anim.frame_duration_ms
+        if mc != nil {
+            if mc.target_dir != {0, 0} {
+                anim.current = .walk
+            } else {
+                anim.current = .default
+            }
         }
 
-        if sdl3.GetTicks() >= anim.next_frame_end_time_ms {
-            anim.anim_index += 1
-            anim.next_frame_end_time_ms = 0
+        // set sprite
+        current := anim.animations[anim.current]
+        if spr.name != current {
+            spr.name = current
+            anim.anim_index = 0
+            anim.next_frame_end_time_ms = sdl3.GetTicks()
+        }
 
-            if anim.anim_index >= frame_count {
-                if anim.loop {
-                    anim.anim_index = 0
+        is_playing := true
+        if !animation_data.repeat {
+            is_playing = anim.anim_index + 1 <= animation_data.frame_count
+        }
+
+        if is_playing {
+
+            if anim.next_frame_end_time_ms == 0 {
+                anim.next_frame_end_time_ms =
+                    sdl3.GetTicks() + animation_data.frame_interval_ms
+            }
+
+            if sdl3.GetTicks() >= anim.next_frame_end_time_ms {
+                anim.anim_index += 1
+                anim.next_frame_end_time_ms = 0
+                if anim.anim_index >= animation_data.frame_count {
+                    if animation_data.repeat {
+                        anim.anim_index = 0
+                    } else {
+                        anim.anim_index = animation_data.frame_count - 1 // clamp to last frame
+                    }
                 }
             }
         }
@@ -60,9 +88,9 @@ towers :: proc() {
         current_time := sdl3.GetTicks()
         if current_time >= tower.next_done_time {
             bullet := spawn_bullet(tower_pos)
-            bullet_c := ecs.get_component(w, bullet, C_Projectile)
+            bullet_c := ecs.get_component(w, bullet, C_MovementController)
 
-            bullet_c.target = linalg.normalize(target_pos - tower_pos)
+            bullet_c.target_dir = linalg.normalize(target_pos - tower_pos)
             bullet_c.speed = 200
 
             tower.next_done_time = current_time + tower.interval_ms
@@ -87,29 +115,132 @@ spawner :: proc() {
     }
 }
 
-projectile :: proc() {
-    w := state.gs.world
-    projectiles := ecs.get_entities_with(w, C_Projectile)
-
-    for e in projectiles {
-        projectile := ecs.get_component(w, e, C_Projectile)
-        projectile_transform := ecs.get_component(w, e, C_Transform)
-
-        projectile_transform.pos +=
-            projectile.target * projectile.speed * state.dt
-    }
-
-}
-
 enemy :: proc() {
     w := state.gs.world
-    enemies := ecs.get_entities_with(w, C_Enemy)
+    query := ecs.query_mask(w, C_Enemy, C_Transform, C_MovementController)
+    enemies := make([dynamic]ecs.Entity, context.temp_allocator)
+    ecs.get_entities_query(w, query, &enemies)
     player_pos := ecs.get_component(w, state.gs.player, C_Transform).pos
 
     for e in enemies {
         transform := ecs.get_component(w, e, C_Transform)
-        dir := linalg.normalize(player_pos - transform.pos)
-        transform.pos += dir * 100 * state.dt
+        mc := ecs.get_component(w, e, C_MovementController)
+        mc.target_dir = linalg.normalize(player_pos - transform.pos)
+    }
+}
+
+movement_control :: proc() {
+    w := state.gs.world
+    query := ecs.query_mask(w, C_Transform, C_MovementController)
+    movement_controlled := make([dynamic]ecs.Entity, context.temp_allocator)
+    ecs.get_entities_query(w, query, &movement_controlled)
+
+    for e in movement_controlled {
+        transform := ecs.get_component(w, e, C_Transform)
+        mc := ecs.get_component(w, e, C_MovementController)
+
+        // add the desired movement direction to velocity
+        transform.vel += mc.target_dir * mc.speed * state.dt
+    }
+
+    // update transforms
+    transforms := ecs.get_entities_with(w, C_Transform)
+
+    for e in transforms {
+        transform := ecs.get_component(w, e, C_Transform)
+
+        transform.pos += transform.vel
+
+        // reset and stuff, may change later
+        transform.last_dir = linalg.normalize(transform.vel)
+        transform.vel = 0
+    }
+}
+
+// takes in the input from the action system and applies to components that listen
+input :: proc() {
+    w := state.gs.world
+    entities := ecs.get_entities_with(w, C_Input)
+
+    // take in input
+    input_dir: Vec2
+    idle := true
+    if action_occurred(.left) {
+        input_dir.x -= 1.0
+    }
+
+    if action_occurred(.right) {
+        input_dir.x += 1.0
+    }
+
+    if action_occurred(.down) {
+        input_dir.y += 1.0
+    }
+
+    if action_occurred(.up) {
+        input_dir.y -= 1.0
+    }
+
+    if input_dir != {} {
+        input_dir = linalg.normalize(input_dir)
+        idle = false
+    }
+
+    for e in entities {
+        input := ecs.get_component(w, e, C_Input)
+        input.input_dir = input_dir
+    }
+
+    // update accordingly
+    query := ecs.query_mask(w, C_Transform, C_Input, C_MovementController)
+    input_movers := make([dynamic]ecs.Entity, context.temp_allocator)
+    ecs.get_entities_query(w, query, &input_movers)
+
+    for e in input_movers {
+        mc := ecs.get_component(w, e, C_MovementController)
+        input := ecs.get_component(w, e, C_Input)
+        mc.target_dir = input.input_dir
+    }
+}
+
+// Flip and rotate sprites based on flip mode and velocity
+sprite_flip_rotate :: proc() {
+    w := state.gs.world
+
+    entities := ecs.get_entities_with(w, C_Sprite)
+
+    for e in entities {
+        spr := ecs.get_component(w, e, C_Sprite)
+        transform := ecs.get_component(w, e, C_Transform)
+
+        switch spr.flip_mode {
+        case .nil:
+            continue
+        case .flip_x:
+            if transform.last_dir.x < 0 do spr.flip_state = .HORIZONTAL
+            if transform.last_dir.x > 0 do spr.flip_state = .NONE
+
+        case .rotate:
+        //TODO:
+        }
+    }
+
+}
+
+// cull out of bounds entities
+cullOOB :: proc(bounds: sdl3.FRect) {
+    w := state.gs.world
+
+    entities := ecs.get_entities_with(w, C_Transform)
+
+    for e in entities {
+        transform := ecs.get_component(w, e, C_Transform)
+        if !sdl3.PointInRectFloat({transform.pos.x, transform.pos.y}, bounds) {
+            // skip the player I guess
+            if e == state.gs.player do continue
+
+            append(&state.gs.entity_free_list, e)
+        }
     }
 }
 
@@ -132,8 +263,8 @@ draw_sprites :: proc(renderer: ^sdl3.Renderer) {
         }
 
         // animations
-        if ecs.has_component(w, e, C_Animation) {
-            anim := ecs.get_component(w, e, C_Animation)
+        if ecs.has_component(w, e, C_AnimationController) {
+            anim := ecs.get_component(w, e, C_AnimationController)
 
             frame_count := sprite_data[spr_component.name].frame_count
             if frame_count > 1 {
@@ -154,12 +285,6 @@ draw_sprites :: proc(renderer: ^sdl3.Renderer) {
         dest.x -= dest.w * pivot_offset.x
         dest.y -= dest.h * pivot_offset.y
 
-
-        // flip
-        mode: sdl3.FlipMode
-        if spr_component.flip_x do mode |= .HORIZONTAL
-        if spr_component.flip_y do mode |= .VERTICAL
-
         sdl3.RenderTextureRotated(
             renderer,
             state.atlas.texture,
@@ -167,7 +292,7 @@ draw_sprites :: proc(renderer: ^sdl3.Renderer) {
             &dest,
             transform.rotation_deg,
             &pivot_point,
-            mode,
+            spr_component.flip_state,
         )
 
     }

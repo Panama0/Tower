@@ -217,6 +217,44 @@ get_entities :: proc(t: ^testing.T) {
 }
 
 @(test)
+register_component :: proc(t: ^testing.T) {
+    w := ecs.make_world()
+    defer ecs.world_destroy(w)
+
+    Position :: struct {
+        x: f32,
+        y: f32,
+    }
+
+    registered := ecs.is_registered(w, Position)
+    testing.expect(t, !registered, "Position not registered before register_component")
+
+    ecs.register_component(w, Position)
+
+    registered = ecs.is_registered(w, Position)
+    testing.expect(t, registered, "Position registered after register_component")
+}
+
+@(test)
+register_component_idempotent :: proc(t: ^testing.T) {
+    w := ecs.make_world()
+    defer ecs.world_destroy(w)
+
+    Position :: struct {
+        x: f32,
+        y: f32,
+    }
+
+    ecs.register_component(w, Position)
+    id1 := ecs.id_of(w, Position)
+
+    ecs.register_component(w, Position)
+    id2 := ecs.id_of(w, Position)
+
+    testing.expect(t, id1 == id2, "register_component is idempotent")
+}
+
+@(test)
 alive_count :: proc(t: ^testing.T) {
     w := ecs.make_world()
     defer ecs.world_destroy(w)

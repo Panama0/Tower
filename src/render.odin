@@ -14,7 +14,7 @@ Sprite :: struct {
 
 Atlas :: struct {
     w, h:    int,
-    // FIX: this needs to be deleted
+    // FIX: this needs to be deleted (maybe)
     texture: ^sdl3.Texture,
 }
 
@@ -113,7 +113,7 @@ load_sprites_and_atlas :: proc(renderer: ^sdl3.Renderer) {
         log.fatal("Failed to create atlas texture: %v", sdl3.GetError())
     }
 
-    sdl3.SetTextureScaleMode(tex, .PIXELART)
+    sdl3.SetTextureScaleMode(tex, .NEAREST)
 
     state.atlas = {
         w       = SIZE,

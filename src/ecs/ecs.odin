@@ -132,16 +132,25 @@ has_component :: proc(w: ^World, e: Entity, $T: typeid) -> bool {
     return id_of(w, T) in w.entity_components[e]
 }
 
+register_component :: proc(w: ^World, $T: typeid) {
+    if T in w.components {
+        return
+    }
+    assert(w.next_component_id < MAX_COMPONENTS, "MAX COMPONENTS REACHED")
+    arr := new(ComponentArray(T))
+    w.components[T] = arr
+
+    w.next_component_id += 1
+    w.component_ids[T] = w.next_component_id
+}
+
+is_registered :: proc(w: ^World, $T: typeid) -> bool {
+    return T in w.components
+}
+
 add_component :: proc(w: ^World, e: Entity, $T: typeid) -> ^T {
     // register if not done already
-    if !(T in w.components) {
-        assert(w.next_component_id < MAX_COMPONENTS, "MAX COMPONENTS REACHED")
-        arr := new(ComponentArray(T))
-        w.components[T] = arr
-
-        w.next_component_id += 1
-        w.component_ids[T] = w.next_component_id
-    }
+    register_component(w, T)
 
     store := w.components[T]
     arr := transmute(^ComponentArray(T))store
@@ -163,6 +172,9 @@ add_component :: proc(w: ^World, e: Entity, $T: typeid) -> ^T {
 }
 
 get_component :: proc(w: ^World, e: Entity, $T: typeid) -> ^T {
+    if !is_registered(w, T) {
+        return nil
+    }
     arr := transmute(^ComponentArray(T))w.components[T]
     if arr == nil do return nil
     val := &arr.data[e]

@@ -1,8 +1,9 @@
 #+ feature dynamic-literals
 package main
 
+import "core:fmt"
 import "core:log"
-import "core:math/linalg"
+import "core:mem"
 
 import "ecs"
 
@@ -24,14 +25,15 @@ SpriteName :: enum {
 }
 
 sprite_data: [SpriteName]Sprite_Data = #partial {
-    .animtest = {frame_count = 3},
-    .knight_idle = {frame_count = 7},
-    .knight_walk = {frame_count = 8},
+    .animtest = {frame_count = 3, frame_interval_ms = 150, repeat = false},
+    .knight_idle = {frame_count = 7, frame_interval_ms = 150, repeat = true},
+    .knight_walk = {frame_count = 8, frame_interval_ms = 150, repeat = false},
 }
 
-// maybe not needed - just make an int?
 Sprite_Data :: struct {
-    frame_count: int,
+    frame_count:       int,
+    frame_interval_ms: u64,
+    repeat:            bool,
     // offset:      Vec2,
     // pivot:       utils.Pivot,
 }
@@ -94,10 +96,18 @@ spawn_player :: proc() -> ecs.Entity {
 
     spr := ecs.add_component(w, e, C_Sprite)
     spr.name = .knight_idle
+    spr.flip_mode = .flip_x
 
-    anim := ecs.add_component(w, e, C_Animation)
-    anim.frame_duration_ms = 150
-    anim.loop = true
+    anim_controller := ecs.add_component(w, e, C_AnimationController)
+    anim_controller.animations = #partial {
+        .default = .knight_idle,
+        .walk    = .knight_walk,
+    }
+
+    movement := ecs.add_component(w, e, C_MovementController)
+    movement.speed = 150
+
+    ecs.add_component(w, e, C_Input)
 
     return e
 }
@@ -130,7 +140,7 @@ spawn_spawner :: proc(pos: Vec2) -> ecs.Entity {
     spr.name = .tile4
 
     timer := ecs.add_component(w, e, C_Spawner)
-    timer.interval_ms = 500
+    timer.interval_ms = 5500
 
     return e
 }
@@ -147,9 +157,16 @@ spawn_enemy :: proc(pos: Vec2) -> ecs.Entity {
     spr := ecs.add_component(w, e, C_Sprite)
     spr.name = .animtest
 
-    anim := ecs.add_component(w, e, C_Animation)
-    anim.frame_duration_ms = 150
-    anim.loop = true
+    anim_controller := ecs.add_component(w, e, C_AnimationController)
+    anim_controller.animations = #partial {
+        .default = .animtest,
+        .walk    = .animtest,
+    }
+    anim_controller.loop = true
+    anim_controller.frame_duration_ms = 150
+
+    mc := ecs.add_component(w, e, C_MovementController)
+    mc.speed = 100
 
     return e
 }
@@ -164,20 +181,56 @@ spawn_bullet :: proc(pos: Vec2) -> ecs.Entity {
     spr := ecs.add_component(w, e, C_Sprite)
     spr.name = .player
 
-    anim := ecs.add_component(w, e, C_Animation)
-    anim.frame_duration_ms = 150
-    anim.loop = true
-
-    bullet := ecs.add_component(w, e, C_Projectile)
+    ecs.add_component(w, e, C_Projectile)
+    ecs.add_component(w, e, C_MovementController)
 
     return e
 }
 
+free_dead_ents :: proc() {
+    for e in state.gs.entity_free_list {
+        ecs.kill_entity(state.gs.world, e)
+    }
+    clear(&state.gs.entity_free_list)
+}
+
+register_components :: proc(w: ^ecs.World) {
+    ecs.register_component(w, C_Sprite)
+    ecs.register_component(w, C_Transform)
+    ecs.register_component(w, C_AnimationController)
+    ecs.register_component(w, C_Tower)
+    ecs.register_component(w, C_Spawner)
+    ecs.register_component(w, C_Projectile)
+    ecs.register_component(w, C_Enemy)
+    ecs.register_component(w, C_MovementController)
+}
+
 main :: proc() {
+    when ODIN_DEBUG {
+        track: mem.Tracking_Allocator
+        mem.tracking_allocator_init(&track, context.allocator)
+        context.allocator = mem.tracking_allocator(&track)
+
+        defer {
+            if len(track.allocation_map) > 0 {
+                for _, entry in track.allocation_map {
+                    fmt.eprintf(
+                        "%v leaked %v bytes\n",
+                        entry.location,
+                        entry.size,
+                    )
+                }
+            }
+            mem.tracking_allocator_destroy(&track)
+        }
+    }
     context.logger = log.create_console_logger()
+    defer log.destroy_console_logger(context.logger)
+
 
     WINDOW_WIDTH :: 640
     WINDOW_HEIGHT :: 360
+    MAX_FPS :: 60
 
     ok := sdl3.Init({.VIDEO})
     if !ok do log.fatalf("Could not initialise SDL: %v", sdl3.GetError())
@@ -206,6 +259,9 @@ main :: proc() {
 
     // init game stuff
     state.gs.world = ecs.make_world()
+    defer ecs.world_destroy(state.gs.world)
+
+    register_components(state.gs.world)
     state.gs.player = spawn_player()
 
     // temp
@@ -263,63 +319,17 @@ main :: proc() {
             spawn_tower(grid_get_nearest_centre(GRID_SIZE, {world_x, world_y}))
         }
 
-        if action_occurred(.rotate) {
-            // player.rotation_deg += 10
-            transform := ecs.get_component(
-                state.gs.world,
-                state.gs.player,
-                C_Transform,
-            )
-            transform.rotation_deg += 10
-        }
-
         // update ent
         w := state.gs.world
 
-        // movement for player
-        //TODO: This could be better for sure
-        input: Vec2
-        idle := true
-        if action_occurred(.left) {
-            input.x -= 1.0
-        }
-
-        if action_occurred(.right) {
-            input.x += 1.0
-        }
-
-        if action_occurred(.down) {
-            input.y += 1.0
-        }
-
-        if action_occurred(.up) {
-            input.y -= 1.0
-        }
-
-        if input != {} {
-            input = linalg.normalize(input)
-            idle = false
-        }
-        transform := ecs.get_component(w, state.gs.player, C_Transform)
-        transform.pos += input * 100.0 * state.dt
-
-        // animations
-        animated := ecs.get_entities_with(w, C_Animation)
-        for e in animated {
-            animation(e)
-        }
-
-        // enemies
+        input()
         enemy()
-
-        // tower
         towers()
-
-        // spawner
         spawner()
-
-        // projectile
-        projectile()
+        movement_control()
+        sprite_flip_rotate()
+        animation()
+        cullOOB({0 - 20, 0 - 20, WINDOW_WIDTH + 20, WINDOW_HEIGHT + 20})
 
 
         // draw
@@ -334,10 +344,15 @@ main :: proc() {
 
         state.gs.ticks += 1
 
+        free_dead_ents()
         reset_input_state(&state.input)
         state.occurred_actions = {}
         free_all(context.temp_allocator)
+
+        sdl3.Delay(1000 / MAX_FPS)
     }
+
+    delete(state.gs.entity_free_list)
 
     sdl3.DestroyRenderer(renderer)
     sdl3.DestroyWindow(window)
