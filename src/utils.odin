@@ -1,5 +1,7 @@
 package main
 
+import "vendor:sdl3"
+
 Pivot :: enum {
     centre,
     top_left,
@@ -23,4 +25,8 @@ pivot_to_vec :: proc(p: Pivot) -> Vec2 {
     }
 
     return {-1, -1}
+}
+
+aabb_to_world :: proc(aabb: sdl3.FRect, point: Vec2) -> sdl3.FRect {
+    return {point.x + aabb.x, point.y + aabb.y, aabb.w, aabb.h}
 }

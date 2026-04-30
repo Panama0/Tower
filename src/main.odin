@@ -3,6 +3,7 @@ package main
 
 import "core:fmt"
 import "core:log"
+import "core:math"
 import "core:mem"
 
 import "ecs"
@@ -22,12 +23,13 @@ SpriteName :: enum {
     animtest,
     knight_idle,
     knight_walk,
+    bullet_test,
 }
 
 sprite_data: [SpriteName]Sprite_Data = #partial {
-    .animtest = {frame_count = 3, frame_interval_ms = 150, repeat = false},
-    .knight_idle = {frame_count = 7, frame_interval_ms = 150, repeat = true},
-    .knight_walk = {frame_count = 8, frame_interval_ms = 150, repeat = false},
+    .animtest = {frame_count = 3, frame_interval_ms = 150, repeat = true},
+    .knight_idle = {frame_count = 7, frame_interval_ms = 100, repeat = true},
+    .knight_walk = {frame_count = 8, frame_interval_ms = 100, repeat = true},
 }
 
 Sprite_Data :: struct {
@@ -109,6 +111,11 @@ spawn_player :: proc() -> ecs.Entity {
 
     ecs.add_component(w, e, C_Input)
 
+
+    collider := ecs.add_component(w, e, C_AABBCollider)
+    collider.rect = {-10, -10, 16, 32}
+    collider.physical = true
+
     return e
 }
 
@@ -168,6 +175,10 @@ spawn_enemy :: proc(pos: Vec2) -> ecs.Entity {
     mc := ecs.add_component(w, e, C_MovementController)
     mc.speed = 100
 
+    collider := ecs.add_component(w, e, C_AABBCollider)
+    collider.rect = {-8, -16, 8, 32}
+    collider.physical = true
+
     return e
 }
 
@@ -179,11 +190,30 @@ spawn_bullet :: proc(pos: Vec2) -> ecs.Entity {
     transform.pos = pos
 
     spr := ecs.add_component(w, e, C_Sprite)
-    spr.name = .player
+    spr.name = .bullet_test
+    spr.flip_mode = .rotate
+
+    x, y: f32
+    g := math.atan2(x, y)
 
     ecs.add_component(w, e, C_Projectile)
     ecs.add_component(w, e, C_MovementController)
 
+    collider := ecs.add_component(w, e, C_AABBCollider)
+    //TODO: make a default collider funciton that takes in sprite w/h
+    collider.rect = {-10, -10, 15, 15}
+
+    collider.hit_proc = proc(self: ecs.Entity, other: ecs.Entity) {
+        w := state.gs.world
+        // projectile -> enemy
+        if ecs.has_component(w, self, C_Projectile) &&
+           ecs.has_component(w, other, C_Enemy) {
+            // kill enemy and bullet
+            log.debug("killed")
+            append(&state.gs.entity_free_list, other)
+            append(&state.gs.entity_free_list, self)
+        }
+    }
     return e
 }
 
@@ -206,15 +236,23 @@ register_components :: proc(w: ^ecs.World) {
 }
 
 main :: proc() {
+    context.logger = log.create_console_logger()
+    defer log.destroy_console_logger(context.logger)
+
     when ODIN_DEBUG {
         track: mem.Tracking_Allocator
         mem.tracking_allocator_init(&track, context.allocator)
         context.allocator = mem.tracking_allocator(&track)
 
         defer {
+            log.debugf(
+                "Peak Allocation: %.3fMB",
+                f64(track.peak_memory_allocated) / 1_048_576,
+            )
+
             if len(track.allocation_map) > 0 {
                 for _, entry in track.allocation_map {
-                    fmt.eprintf(
+                    log.debugf(
                         "%v leaked %v bytes\n",
                         entry.location,
                         entry.size,
@@ -224,8 +262,6 @@ main :: proc() {
             mem.tracking_allocator_destroy(&track)
         }
     }
-    context.logger = log.create_console_logger()
-    defer log.destroy_console_logger(context.logger)
 
 
     WINDOW_WIDTH :: 640
@@ -253,6 +289,9 @@ main :: proc() {
         WINDOW_HEIGHT,
         .INTEGER_SCALE,
     )
+
+    // for opacity
+    sdl3.SetRenderDrawBlendMode(renderer, {.BLEND})
 
     // init "renderer"
     load_sprites_and_atlas(renderer)
@@ -327,6 +366,7 @@ main :: proc() {
         towers()
         spawner()
         movement_control()
+        collision()
         sprite_flip_rotate()
         animation()
         cullOOB({0 - 20, 0 - 20, WINDOW_WIDTH + 20, WINDOW_HEIGHT + 20})
@@ -337,6 +377,8 @@ main :: proc() {
         sdl3.RenderClear(renderer)
 
         draw_sprites(renderer)
+        draw_colliders(renderer)
+
 
         grid_draw(renderer, GRID_SIZE, {WINDOW_WIDTH, WINDOW_HEIGHT})
 

@@ -2,6 +2,8 @@ package main
 
 import "vendor:sdl3"
 
+import "ecs"
+
 FlipMode :: enum {
     nil,
     flip_x,
@@ -9,10 +11,11 @@ FlipMode :: enum {
 }
 
 C_Sprite :: struct {
-    name:       SpriteName,
-    draw_pivot: Pivot,
-    flip_mode:  FlipMode, // how or if to flip the sprite when drawing based on velocity
-    flip_state: sdl3.FlipMode,
+    name:         SpriteName,
+    draw_pivot:   Pivot,
+    rotation_deg: f64,
+    flip_mode:    FlipMode, // how or if to flip the sprite when drawing based on velocity
+    flip_state:   sdl3.FlipMode,
 }
 
 AnimationState :: enum {
@@ -30,11 +33,10 @@ C_AnimationController :: struct {
 }
 
 C_Transform :: struct {
-    pos:          Vec2,
-    vel:          Vec2,
-    rotation_deg: f64,
-    pivot:        Pivot,
-    last_dir:     Vec2, // needed as vel is reset/changed after application
+    pos:      Vec2,
+    vel:      Vec2,
+    // pivot:        Pivot,
+    last_dir: Vec2, // needed as vel is reset/changed after application
 }
 
 // might use for spawner/turret, otherwise they both get a component
@@ -64,4 +66,10 @@ C_MovementController :: struct {
 
 C_Input :: struct {
     input_dir: Vec2,
+}
+
+C_AABBCollider :: struct {
+    rect:     sdl3.FRect, // offset from the pos
+    hit_proc: proc(self: ecs.Entity, other: ecs.Entity),
+    physical: bool, // does the collider hit other objects
 }

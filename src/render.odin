@@ -20,6 +20,7 @@ Atlas :: struct {
 
 load_sprites_and_atlas :: proc(renderer: ^sdl3.Renderer) {
     img_dir := "res/sprites/"
+    //FIX: need default asset when not found
 
 
     SIZE :: 1024

@@ -1,7 +1,9 @@
 package main
 
 import "base:runtime"
+import "core:bytes"
 import "core:log"
+import "core:math"
 import "core:math/linalg"
 import "core:math/rand"
 
@@ -221,7 +223,10 @@ sprite_flip_rotate :: proc() {
             if transform.last_dir.x > 0 do spr.flip_state = .NONE
 
         case .rotate:
-        //TODO:
+            if transform.last_dir == {} do continue
+            angle := math.atan2(transform.last_dir.y, transform.last_dir.x)
+            degrees := math.to_degrees(angle)
+            spr.rotation_deg = f64(degrees)
         }
     }
 
@@ -241,6 +246,83 @@ cullOOB :: proc(bounds: sdl3.FRect) {
 
             append(&state.gs.entity_free_list, e)
         }
+    }
+}
+
+collision :: proc() {
+    w := state.gs.world
+
+    colliders := ecs.get_entities_with(w, C_AABBCollider)
+
+    for e in colliders {
+        transform := ecs.get_component(w, e, C_Transform)
+        collider := ecs.get_component(w, e, C_AABBCollider)
+        e_wp := aabb_to_world(collider.rect, transform.pos)
+
+        for other in colliders {
+            if e == other do continue
+
+            other_collider := ecs.get_component(w, other, C_AABBCollider)
+            other_transform := ecs.get_component(w, other, C_Transform)
+            o_wp := aabb_to_world(other_collider.rect, other_transform.pos)
+
+            intersection: sdl3.FRect
+            hit := sdl3.GetRectIntersectionFloat(e_wp, o_wp, &intersection)
+
+            if !hit do continue
+
+            // hit behaviour
+            if collider.hit_proc != nil {
+                collider.hit_proc(e, other)
+            }
+
+            //FIX: doesnt work
+            if !other_collider.physical do continue
+
+            // resolve collisions
+            if intersection.w < intersection.h {
+                push := intersection.w * 0.5
+                if transform.pos.x < other_transform.pos.x {
+                    transform.pos.x -= push
+                    other_transform.pos.x += push
+                } else {
+                    transform.pos.x += push
+                    other_transform.pos.x -= push
+                }
+            } else {
+                push := intersection.h * 0.5
+                if transform.pos.y < other_transform.pos.y {
+                    transform.pos.y -= push
+                    other_transform.pos.y += push
+                } else {
+                    transform.pos.y += push
+                    other_transform.pos.y -= push
+                }
+            }
+        }
+    }
+}
+
+// --- Drawing ---
+
+// for debug if needed
+draw_colliders :: proc(renderer: ^sdl3.Renderer) {
+    w := state.gs.world
+
+    colliders := ecs.get_entities_with(w, C_AABBCollider)
+
+    for e in colliders {
+        transform := ecs.get_component(w, e, C_Transform)
+        aabb := ecs.get_component(w, e, C_AABBCollider)
+
+        aabb_world := aabb_to_world(aabb.rect, transform.pos)
+
+
+        r, g, b, a: sdl3.Uint8
+        sdl3.GetRenderDrawColor(renderer, &r, &g, &b, &a)
+        sdl3.SetRenderDrawColor(renderer, 0, 150, 150, 100)
+        sdl3.RenderFillRect(renderer, &aabb_world)
+        sdl3.SetRenderDrawColor(renderer, r, g, b, a)
     }
 }
 
@@ -290,7 +372,7 @@ draw_sprites :: proc(renderer: ^sdl3.Renderer) {
             state.atlas.texture,
             &src,
             &dest,
-            transform.rotation_deg,
+            spr_component.rotation_deg,
             &pivot_point,
             spr_component.flip_state,
         )
