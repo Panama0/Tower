@@ -87,15 +87,12 @@ towers :: proc() {
         target := rand.int_max(enemy_count)
         target_pos := ecs.get_component(w, enemies[target], C_Transform).pos
 
-        current_time := sdl3.GetTicks()
-        if current_time >= tower.next_done_time {
+        if timer_done_reset(&tower.timer) {
             bullet := spawn_bullet(tower_pos)
             bullet_c := ecs.get_component(w, bullet, C_MovementController)
 
             bullet_c.target_dir = linalg.normalize(target_pos - tower_pos)
             bullet_c.speed = 200
-
-            tower.next_done_time = current_time + tower.interval_ms
         }
     }
 }
@@ -108,11 +105,8 @@ spawner :: proc() {
         spawner := ecs.get_component(w, e, C_Spawner)
         spawner_pos := ecs.get_component(w, e, C_Transform).pos
 
-        current_time := sdl3.GetTicks()
-        if current_time >= spawner.next_done_time {
-            enemy := spawn_enemy(spawner_pos)
-
-            spawner.next_done_time = current_time + spawner.interval_ms
+        if timer_done_reset(&spawner.timer) {
+            spawn_enemy(spawner_pos)
         }
     }
 }
@@ -154,7 +148,7 @@ movement_control :: proc() {
         transform.pos += transform.vel
 
         // reset and stuff, may change later
-        transform.last_dir = linalg.normalize(transform.vel)
+        transform.last_dir = linalg.normalize0(transform.vel)
         transform.vel = 0
     }
 }
@@ -249,10 +243,40 @@ cullOOB :: proc(bounds: sdl3.FRect) {
     }
 }
 
+pulse :: proc() {
+    w := state.gs.world
+    query := ecs.query_mask(w, C_Pulse, C_Transform)
+    pulsing := make([dynamic]ecs.Entity, context.temp_allocator)
+    ecs.get_entities_query(w, query, &pulsing)
+
+    for e in pulsing {
+        pulse := ecs.get_component(w, e, C_Pulse)
+        transform := ecs.get_component(w, e, C_Transform)
+
+        transform.vel += pulse.vel * state.dt
+
+        decay_factor := math.max(0, 1 - pulse.decay * state.dt)
+        pulse.vel *= decay_factor
+
+        // remove if small enough
+        if linalg.length(pulse.vel) < 0.1 {
+            pulse.vel = 0
+            ecs.remove_component(w, e, C_Pulse)
+        }
+    }
+}
+
 collision :: proc() {
     w := state.gs.world
 
     colliders := ecs.get_entities_with(w, C_AABBCollider)
+
+    Collision :: struct {
+        e:            ecs.Entity,
+        other:        ecs.Entity,
+        intersection: sdl3.FRect,
+    }
+    collisions := make([dynamic]Collision, context.temp_allocator)
 
     for e in colliders {
         transform := ecs.get_component(w, e, C_Transform)
@@ -272,38 +296,93 @@ collision :: proc() {
             if !hit do continue
 
             // hit behaviour
-            if collider.hit_proc != nil {
-                collider.hit_proc(e, other)
+            // if collider.hit_proc != nil {
+            //     collider.hit_proc(e, other)
+            // }
+
+            // projectile -> enemy
+            if ecs.has_component(w, e, C_Projectile) &&
+               ecs.has_component(w, other, C_Enemy) {
+                // kill enemy and bullet
+                append(&state.gs.entity_free_list, other)
+                append(&state.gs.entity_free_list, e)
             }
 
-            //FIX: doesnt work
-            if !other_collider.physical do continue
+            // enemy -> player (attack)
+            if ecs.has_component(w, e, C_Enemy) && other == state.gs.player {
+                attack := ecs.get_component(w, e, C_Attack)
 
-            // resolve collisions
-            if intersection.w < intersection.h {
-                push := intersection.w * 0.5
-                if transform.pos.x < other_transform.pos.x {
-                    transform.pos.x -= push
-                    other_transform.pos.x += push
-                } else {
-                    transform.pos.x += push
-                    other_transform.pos.x -= push
+                if timer_done_reset(&attack.cooldown_timer) {
+                    player_health := ecs.get_component(w, other, C_Health)
+                    player_health.current_health -= attack.damage
+
+                    dir := linalg.normalize0(
+                        ecs.get_component(w, other, C_Transform).pos -
+                        ecs.get_component(w, e, C_Transform).pos,
+                    )
+
+                    pulse := ecs.add_component(w, other, C_Pulse)
+                    pulse.vel = dir * attack.knockback
+                    pulse.decay = 10
                 }
+            }
+
+            // dont need to resolve if either is not physical
+            if !collider.physical || !other_collider.physical do continue
+
+            append(&collisions, Collision{e, other, intersection})
+        }
+    }
+
+    // resolve after
+    for col in collisions {
+        e_transform := ecs.get_component(w, col.e, C_Transform)
+        other_transform := ecs.get_component(w, col.other, C_Transform)
+
+        if col.intersection.w < col.intersection.h {
+            push := col.intersection.w * 0.5
+            if e_transform.pos.x < other_transform.pos.x {
+                e_transform.pos.x -= push
+                other_transform.pos.x += push
             } else {
-                push := intersection.h * 0.5
-                if transform.pos.y < other_transform.pos.y {
-                    transform.pos.y -= push
-                    other_transform.pos.y += push
-                } else {
-                    transform.pos.y += push
-                    other_transform.pos.y -= push
-                }
+                e_transform.pos.x += push
+                other_transform.pos.x -= push
+            }
+        } else {
+            push := col.intersection.h * 0.5
+            if e_transform.pos.y < other_transform.pos.y {
+                e_transform.pos.y -= push
+                other_transform.pos.y += push
+            } else {
+                e_transform.pos.y += push
+                other_transform.pos.y -= push
             }
         }
     }
 }
 
 // --- Drawing ---
+
+//TODO: maybe we can remove the width when we create app subsystem
+draw_player_health :: proc(renderer: ^sdl3.Renderer, width, height: int) {
+    w := state.gs.world
+    hp := ecs.get_component(w, state.gs.player, C_Health)
+
+    if hp.current_health <= 0 do return
+
+    BAR_HEIGHT :: 10
+
+    percent_health := f32(hp.current_health) / f32(hp.max_health)
+
+    rect := sdl3.FRect {
+        0,
+        f32(height) - BAR_HEIGHT,
+        f32(width) * percent_health,
+        BAR_HEIGHT,
+    }
+
+    draw_rect(renderer, &rect, 255, 0, 0)
+}
 
 // for debug if needed
 draw_colliders :: proc(renderer: ^sdl3.Renderer) {
@@ -317,12 +396,7 @@ draw_colliders :: proc(renderer: ^sdl3.Renderer) {
 
         aabb_world := aabb_to_world(aabb.rect, transform.pos)
 
-
-        r, g, b, a: sdl3.Uint8
-        sdl3.GetRenderDrawColor(renderer, &r, &g, &b, &a)
-        sdl3.SetRenderDrawColor(renderer, 0, 150, 150, 100)
-        sdl3.RenderFillRect(renderer, &aabb_world)
-        sdl3.SetRenderDrawColor(renderer, r, g, b, a)
+        draw_rect(renderer, &aabb_world, 0, 150, 150, 100)
     }
 }
 

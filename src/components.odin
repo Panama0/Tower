@@ -10,6 +10,11 @@ FlipMode :: enum {
     rotate,
 }
 
+Timer :: struct {
+    interval_ms:    u64,
+    next_done_time: u64,
+}
+
 C_Sprite :: struct {
     name:         SpriteName,
     draw_pivot:   Pivot,
@@ -41,27 +46,41 @@ C_Transform :: struct {
 
 // might use for spawner/turret, otherwise they both get a component
 C_Tower :: struct {
-    interval_ms:    u64,
-    next_done_time: u64,
+    timer: Timer,
 }
 
 C_Spawner :: struct {
-    interval_ms:    u64,
-    next_done_time: u64,
+    timer: Timer,
 }
 
 C_Projectile :: struct {
     damage: f32,
 }
 
-//TODO: blank structs do not work!!
 C_Enemy :: struct {
-    test: int,
+    nothing: int,
+}
+
+C_Health :: struct {
+    max_health:     int,
+    current_health: int,
+    damage_resist:  int,
+}
+
+C_Attack :: struct {
+    damage:         int,
+    knockback:      f32, // can be applied to pulse
+    cooldown_timer: Timer,
 }
 
 C_MovementController :: struct {
     target_dir: Vec2,
     speed:      f32,
+}
+
+C_Pulse :: struct {
+    vel:   Vec2,
+    decay: f32,
 }
 
 C_Input :: struct {

@@ -107,7 +107,7 @@ spawn_player :: proc() -> ecs.Entity {
     }
 
     movement := ecs.add_component(w, e, C_MovementController)
-    movement.speed = 150
+    movement.speed = 130
 
     ecs.add_component(w, e, C_Input)
 
@@ -115,6 +115,10 @@ spawn_player :: proc() -> ecs.Entity {
     collider := ecs.add_component(w, e, C_AABBCollider)
     collider.rect = {-10, -10, 16, 32}
     collider.physical = true
+
+    health := ecs.add_component(w, e, C_Health)
+    health.max_health = 100
+    health.current_health = 25
 
     return e
 }
@@ -130,7 +134,7 @@ spawn_tower :: proc(pos: Vec2) -> ecs.Entity {
     spr.name = .tile1
 
     timer := ecs.add_component(w, e, C_Tower)
-    timer.interval_ms = 300
+    timer.timer.interval_ms = 300
 
     return e
 }
@@ -147,7 +151,7 @@ spawn_spawner :: proc(pos: Vec2) -> ecs.Entity {
     spr.name = .tile4
 
     timer := ecs.add_component(w, e, C_Spawner)
-    timer.interval_ms = 5500
+    timer.timer.interval_ms = 5500
 
     return e
 }
@@ -173,11 +177,16 @@ spawn_enemy :: proc(pos: Vec2) -> ecs.Entity {
     anim_controller.frame_duration_ms = 150
 
     mc := ecs.add_component(w, e, C_MovementController)
-    mc.speed = 100
+    mc.speed = 20
 
     collider := ecs.add_component(w, e, C_AABBCollider)
     collider.rect = {-8, -16, 8, 32}
     collider.physical = true
+
+    attack := ecs.add_component(w, e, C_Attack)
+    attack.damage = 10
+    attack.knockback = 350
+    attack.cooldown_timer.interval_ms = 1000
 
     return e
 }
@@ -233,6 +242,7 @@ register_components :: proc(w: ^ecs.World) {
     ecs.register_component(w, C_Projectile)
     ecs.register_component(w, C_Enemy)
     ecs.register_component(w, C_MovementController)
+    ecs.register_component(w, C_Pulse)
 }
 
 main :: proc() {
@@ -365,12 +375,16 @@ main :: proc() {
         enemy()
         towers()
         spawner()
+        pulse()
         movement_control()
         collision()
         sprite_flip_rotate()
         animation()
         cullOOB({0 - 20, 0 - 20, WINDOW_WIDTH + 20, WINDOW_HEIGHT + 20})
 
+        // debug
+        hp := ecs.get_component(w, state.gs.player, C_Health)
+        if hp.current_health <= 0 do hp.current_health = 100
 
         // draw
         sdl3.SetRenderDrawColor(renderer, 245, 235, 220, 255)
@@ -379,6 +393,8 @@ main :: proc() {
         draw_sprites(renderer)
         draw_colliders(renderer)
 
+        // ui?
+        draw_player_health(renderer, 640, 360)
 
         grid_draw(renderer, GRID_SIZE, {WINDOW_WIDTH, WINDOW_HEIGHT})
 
