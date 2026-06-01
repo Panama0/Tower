@@ -5,6 +5,7 @@ import "core:log"
 import "core:strings"
 
 import sdl3 "vendor:sdl3"
+import ttf "vendor:sdl3/ttf"
 import stbrp "vendor:stb/rect_pack"
 
 Sprite :: struct {
@@ -123,4 +124,93 @@ load_sprites_and_atlas :: proc(renderer: ^sdl3.Renderer) {
     }
 
     sdl3.SavePNG(atlas_surface, "res/atlas.png")
+}
+
+load_fonts :: proc(renderer: ^sdl3.Renderer) {
+    FONT_DIR :: "res/fonts/"
+
+    for style in FontStyle {
+        data := &font_data[style]
+        path := fmt.tprint(FONT_DIR, data.family, ".ttf", sep = "")
+
+        font := ttf.OpenFont(
+            strings.clone_to_cstring(path, context.temp_allocator),
+            data.size_pt,
+        )
+
+        if font == nil {
+            log.debugf(
+                "Failed to load font %v with error: %v",
+                path,
+                sdl3.GetError(),
+            )
+        }
+
+        state.fonts[style] = font
+    }
+}
+
+draw_text :: proc(
+    renderer: ^sdl3.Renderer,
+    style: FontStyle,
+    text: string,
+    x, y: f32,
+) {
+    fg := sdl3.Color{0, 0, 0, 255} // White
+    font := state.fonts[style]
+
+    surface := ttf.RenderText_Solid(
+        font,
+        strings.clone_to_cstring(text, context.temp_allocator),
+        0,
+        fg,
+    )
+
+    if surface == nil {
+        log.debugf(
+            "Failed to render text '%v' with error: %v",
+            text,
+            sdl3.GetError(),
+        )
+        return
+    }
+    defer sdl3.DestroySurface(surface)
+
+    // draw
+    texture := sdl3.CreateTextureFromSurface(renderer, surface)
+
+    if texture == nil {
+        log.debugf("Failed to create texture with error: %v", sdl3.GetError())
+        return
+    }
+    defer sdl3.DestroyTexture(texture)
+
+
+    // should be removed
+    sdl3.SetTextureScaleMode(texture, .NEAREST)
+
+    dst := sdl3.FRect {
+        x = x,
+        y = y,
+        w = f32(surface.w),
+        h = f32(surface.h),
+    }
+
+    sdl3.RenderTexture(renderer, texture, nil, &dst)
+}
+
+// draw a rect and reset the colour after
+draw_rect :: proc(
+    renderer: ^sdl3.Renderer,
+    rect: ^sdl3.FRect,
+    r: sdl3.Uint8,
+    g: sdl3.Uint8,
+    b: sdl3.Uint8,
+    a: sdl3.Uint8 = 255,
+) {
+    old_r, old_g, old_b, old_a: sdl3.Uint8
+    sdl3.GetRenderDrawColor(renderer, &old_r, &old_g, &old_b, &old_a)
+    sdl3.SetRenderDrawColor(renderer, r, g, b, a)
+    sdl3.RenderFillRect(renderer, rect)
+    sdl3.SetRenderDrawColor(renderer, r, g, b, a)
 }

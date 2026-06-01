@@ -207,6 +207,15 @@ map_sdl_mousebutton :: proc(mouse_button: u8) -> Button {
     return {}
 }
 
+@(private = "file")
+map_sdl_scrollwheel :: proc(scroll_value: f32) -> Button {
+    if scroll_value < 0 {
+        return .SC_DOWN
+    } else if scroll_value > 0 {
+        return .SC_UP
+    } else do return .UNKNOWN
+}
+
 key_pressed :: proc(code: Button) -> bool {
     return .pressed in state.input.keys[code]
 }
@@ -251,7 +260,9 @@ handle_sdl_events :: proc() {
             state.input.mouse_y = ev.motion.y
 
         case .MOUSE_WHEEL:
+            button := map_sdl_scrollwheel(ev.wheel.y)
             state.input.scroll_y = ev.wheel.y
+            state.input.keys[button] += {.down, .pressed}
 
         case .MOUSE_BUTTON_UP:
             button := map_sdl_mousebutton(ev.button.button)

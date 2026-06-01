@@ -9,9 +9,11 @@ import "core:mem"
 import "ecs"
 
 import "vendor:sdl3"
+import ttf "vendor:sdl3/ttf"
 
 Vec2 :: [2]f32
 Vec2i :: [2]i32
+
 
 SpriteName :: enum {
     nil,
@@ -40,6 +42,46 @@ Sprite_Data :: struct {
     // pivot:       utils.Pivot,
 }
 
+//os file name
+FontName :: enum {
+    Minecraft,
+    LiberationSans,
+}
+
+// internal name
+FontStyle :: enum {
+    normal,
+    debug,
+    // examples
+    // bold
+    // menu header
+}
+
+font_data: [FontStyle]FontData = {
+    .normal = {.Minecraft, 16},
+    .debug  = {.LiberationSans, 16},
+}
+
+FontData :: struct {
+    family:  FontName,
+    size_pt: f32,
+    // if we want bold/ita in the future
+    //style: string
+}
+
+// things you can place
+Item :: enum {
+    none,
+    wall,
+    tower,
+}
+
+item_sprites := [Item]SpriteName {
+    .none  = .nil,
+    .wall  = .tile1,
+    .tower = .tile2,
+}
+
 MAX_ENTITIES :: 1024
 GRID_SIZE :: 32
 
@@ -51,6 +93,7 @@ State :: struct {
     occurred_actions: [Action]bool,
     atlas:            Atlas,
     sprites:          [SpriteName]Sprite,
+    fonts:            [FontStyle]^ttf.Font,
 }
 
 GameState :: struct {
@@ -59,6 +102,8 @@ GameState :: struct {
     world:            ^ecs.World,
     entity_free_list: [dynamic]ecs.Entity,
     player:           ecs.Entity,
+    items:            [Item]int,
+    selected_item:    Item,
 }
 
 state: State
@@ -70,8 +115,10 @@ Action :: enum {
     up,
     down,
     exit,
-    place_tower,
+    place_item,
     rotate,
+    next_item,
+    prev_item,
 }
 
 action_bindings: map[Bind]Action = {
@@ -80,7 +127,7 @@ action_bindings: map[Bind]Action = {
     {.S, .down} = .down,
     {.D, .down} = .right,
     {.ESCAPE, .pressed} = .exit,
-    {.M_LEFT, .pressed} = .place_tower,
+    {.M_LEFT, .pressed} = .place_item,
     {.R, .pressed} = .rotate,
 }
 
@@ -131,7 +178,7 @@ spawn_tower :: proc(pos: Vec2) -> ecs.Entity {
     transform.pos = pos
 
     spr := ecs.add_component(w, e, C_Sprite)
-    spr.name = .tile1
+    spr.name = item_sprites[.tower]
 
     timer := ecs.add_component(w, e, C_Tower)
     timer.timer.interval_ms = 300
@@ -278,6 +325,7 @@ main :: proc() {
     WINDOW_HEIGHT :: 360
     MAX_FPS :: 60
 
+    // window
     ok := sdl3.Init({.VIDEO})
     if !ok do log.fatalf("Could not initialise SDL: %v", sdl3.GetError())
 
@@ -303,8 +351,22 @@ main :: proc() {
     // for opacity
     sdl3.SetRenderDrawBlendMode(renderer, {.BLEND})
 
+    // fonts
+
+    if !ttf.Init() {
+        log.fatalf("TTF init failed with error: %v", sdl3.GetError())
+    }
+    defer ttf.Quit()
+
     // init "renderer"
     load_sprites_and_atlas(renderer)
+    load_fonts(renderer)
+    // unload fonts
+    defer {
+        for font in state.fonts {
+            ttf.CloseFont(font)
+        }
+    }
 
     // init game stuff
     state.gs.world = ecs.make_world()
@@ -313,8 +375,24 @@ main :: proc() {
     register_components(state.gs.world)
     state.gs.player = spawn_player()
 
+    ui_init(renderer, WINDOW_WIDTH, WINDOW_HEIGHT)
+
     // temp
     spawn_spawner({450, 150})
+    ui_set_hotbar_items(
+        {
+            .tower,
+            .none,
+            .none,
+            .none,
+            .none,
+            .none,
+            .none,
+            .none,
+            .none,
+            .none,
+        },
+    )
 
 
     last_tick: u64 = sdl3.GetTicks()
@@ -329,6 +407,8 @@ main :: proc() {
 
         handle_sdl_events()
 
+        // ui must be first as it consumes keys
+        ui_update()
 
         // register actions
         for bind, action in action_bindings {
@@ -354,7 +434,7 @@ main :: proc() {
             state.running = false
         }
 
-        if action_occurred(.place_tower) {
+        if action_occurred(.place_item) {
             world_x, world_y: f32
             // not sure if this is right
             sdl3.RenderCoordinatesFromWindow(
@@ -365,7 +445,13 @@ main :: proc() {
                 &world_y,
             )
 
-            spawn_tower(grid_get_nearest_centre(GRID_SIZE, {world_x, world_y}))
+            //TODO: add all cases later
+            #partial switch state.gs.selected_item {
+            case .tower:
+                spawn_tower(
+                    grid_get_nearest_centre(GRID_SIZE, {world_x, world_y}),
+                )
+            }
         }
 
         // update ent
@@ -386,14 +472,15 @@ main :: proc() {
         hp := ecs.get_component(w, state.gs.player, C_Health)
         if hp.current_health <= 0 do hp.current_health = 100
 
-        // draw
+        // draw game
         sdl3.SetRenderDrawColor(renderer, 245, 235, 220, 255)
         sdl3.RenderClear(renderer)
 
         draw_sprites(renderer)
         draw_colliders(renderer)
 
-        // ui?
+        // draw ui
+        ui_draw_hud()
         draw_player_health(renderer, 640, 360)
 
         grid_draw(renderer, GRID_SIZE, {WINDOW_WIDTH, WINDOW_HEIGHT})
