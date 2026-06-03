@@ -42,3 +42,14 @@ timer_done_reset :: proc(timer: ^Timer) -> bool {
 
     return false
 }
+
+point_in_circle :: proc(px, py, cx, cy, r: f32) -> bool {
+    dx := px - cx
+    dy := py - cy
+    return dx * dx + dy * dy <= r * r
+}
+
+// provides a collider rect that covers the full sprite
+default_collider :: proc(spr_width, spr_height: f32) -> sdl3.FRect {
+    return {-(spr_width / 2), -(spr_height / 2), spr_width, spr_height}
+}

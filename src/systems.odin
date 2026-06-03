@@ -339,23 +339,30 @@ collision :: proc() {
         e_transform := ecs.get_component(w, col.e, C_Transform)
         other_transform := ecs.get_component(w, col.other, C_Transform)
 
-        if col.intersection.w < col.intersection.h {
-            push := col.intersection.w * 0.5
+        e_collider := ecs.get_component(w, col.e, C_AABBCollider)
+        other_collider := ecs.get_component(w, col.other, C_AABBCollider)
+
+        // skip if e is static (reverse pair handles it)
+        if e_collider.static do continue
+
+        push_mult: f32 = 1.0
+        if !other_collider.static {
+            push_mult = 0.5  // dynamic-dynamic: each takes half
+        }
+
+        if col.intersection.w <= col.intersection.h {
+            push := col.intersection.w * push_mult
             if e_transform.pos.x < other_transform.pos.x {
                 e_transform.pos.x -= push
-                other_transform.pos.x += push
             } else {
                 e_transform.pos.x += push
-                other_transform.pos.x -= push
             }
         } else {
-            push := col.intersection.h * 0.5
+            push := col.intersection.h * push_mult
             if e_transform.pos.y < other_transform.pos.y {
                 e_transform.pos.y -= push
-                other_transform.pos.y += push
             } else {
                 e_transform.pos.y += push
-                other_transform.pos.y -= push
             }
         }
     }
@@ -452,4 +459,14 @@ draw_sprites :: proc(renderer: ^sdl3.Renderer) {
         )
 
     }
+}
+
+draw_range :: proc(renderer: ^sdl3.Renderer) {
+    range := item_data[state.gs.selected_item].place_radius
+    if range == 0 do return
+
+    origin := &ecs.get_component(state.gs.world, state.gs.player, C_Transform).pos
+
+    draw_circle(renderer, range, origin.x, origin.y, 0, 0, 0, 100)
+
 }

@@ -26,6 +26,7 @@ SpriteName :: enum {
     knight_idle,
     knight_walk,
     bullet_test,
+    fence,
 }
 
 sprite_data: [SpriteName]Sprite_Data = #partial {
@@ -72,18 +73,26 @@ FontData :: struct {
 // things you can place
 Item :: enum {
     none,
-    wall,
     tower,
+    wall,
 }
 
-item_sprites := [Item]SpriteName {
-    .none  = .nil,
-    .wall  = .tile1,
-    .tower = .tile2,
+ItemData :: struct {
+    sprite:       SpriteName,
+    cost:         int,
+    place_radius: f32,
+    //TODO:
+    // draggable: bool // for fences, walls
+}
+
+item_data: [Item]ItemData = {
+    .none = {sprite = .nil, cost = 0, place_radius = 0},
+    .wall = {sprite = .fence, cost = 20, place_radius = 0},
+    .tower = {sprite = .tile2, cost = 100, place_radius = 100},
 }
 
 MAX_ENTITIES :: 1024
-GRID_SIZE :: 32
+GRID_SIZE :: 16
 
 State :: struct {
     gs:               GameState,
@@ -116,6 +125,7 @@ Action :: enum {
     down,
     exit,
     place_item,
+    show_range, // show the place radius of current item
     rotate,
     next_item,
     prev_item,
@@ -127,7 +137,8 @@ action_bindings: map[Bind]Action = {
     {.S, .down} = .down,
     {.D, .down} = .right,
     {.ESCAPE, .pressed} = .exit,
-    {.M_LEFT, .pressed} = .place_item,
+    {.M_LEFT, .released} = .place_item,
+    {.M_RIGHT, .down} = .show_range,
     {.R, .pressed} = .rotate,
 }
 
@@ -178,10 +189,29 @@ spawn_tower :: proc(pos: Vec2) -> ecs.Entity {
     transform.pos = pos
 
     spr := ecs.add_component(w, e, C_Sprite)
-    spr.name = item_sprites[.tower]
+    spr.name = item_data[.tower].sprite
 
     timer := ecs.add_component(w, e, C_Tower)
     timer.timer.interval_ms = 300
+
+    return e
+}
+
+spawn_wall :: proc(pos: Vec2) -> ecs.Entity {
+    w := state.gs.world
+    e := ecs.add_entity(w)
+
+    transform := ecs.add_component(w, e, C_Transform)
+    transform.pos = pos
+
+    spr := ecs.add_component(w, e, C_Sprite)
+    spr.name = item_data[.wall].sprite
+
+    coll := ecs.add_component(w, e, C_AABBCollider)
+    coll.physical = true
+    coll.static = true
+    spr_w := f32(state.sprites[spr.name].width)
+    coll.rect = default_collider(spr_w, spr_w)
 
     return e
 }
@@ -259,17 +289,6 @@ spawn_bullet :: proc(pos: Vec2) -> ecs.Entity {
     //TODO: make a default collider funciton that takes in sprite w/h
     collider.rect = {-10, -10, 15, 15}
 
-    collider.hit_proc = proc(self: ecs.Entity, other: ecs.Entity) {
-        w := state.gs.world
-        // projectile -> enemy
-        if ecs.has_component(w, self, C_Projectile) &&
-           ecs.has_component(w, other, C_Enemy) {
-            // kill enemy and bullet
-            log.debug("killed")
-            append(&state.gs.entity_free_list, other)
-            append(&state.gs.entity_free_list, self)
-        }
-    }
     return e
 }
 
@@ -382,7 +401,7 @@ main :: proc() {
     ui_set_hotbar_items(
         {
             .tower,
-            .none,
+            .wall,
             .none,
             .none,
             .none,
@@ -445,13 +464,36 @@ main :: proc() {
                 &world_y,
             )
 
-            //TODO: add all cases later
-            #partial switch state.gs.selected_item {
-            case .tower:
-                spawn_tower(
-                    grid_get_nearest_centre(GRID_SIZE, {world_x, world_y}),
+            // check if in range
+            origin := &ecs.get_component(state.gs.world, state.gs.player, C_Transform).pos
+            range := item_data[state.gs.selected_item].place_radius
+
+            if range == 0 ||
+               point_in_circle(world_x, world_y, origin.x, origin.y, range) {
+
+                // in future, need to fix?
+
+                grid_mid := grid_get_nearest_centre(
+                    GRID_SIZE,
+                    {world_x, world_y},
                 )
+
+                grid_tl := grid_get_nearest(GRID_SIZE, {world_x, world_y})
+
+                #partial switch state.gs.selected_item {
+                case .tower:
+                    spawn_tower(grid_tl)
+
+                case .wall:
+                    spawn_wall(grid_mid)
+                }
+
             }
+        }
+
+        show_range := false
+        if action_occurred(.show_range) {
+            show_range = true
         }
 
         // update ent
@@ -479,6 +521,8 @@ main :: proc() {
         draw_sprites(renderer)
         draw_colliders(renderer)
 
+        if show_range do draw_range(renderer)
+
         // draw ui
         ui_draw_hud()
         draw_player_health(renderer, 640, 360)
@@ -493,6 +537,7 @@ main :: proc() {
         reset_input_state(&state.input)
         state.occurred_actions = {}
         free_all(context.temp_allocator)
+
 
         sdl3.Delay(1000 / MAX_FPS)
     }

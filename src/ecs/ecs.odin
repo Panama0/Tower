@@ -84,7 +84,8 @@ add_entity :: proc(w: ^World) -> Entity {
 kill_entity :: proc(w: ^World, e: Entity) {
     assert(w.alive_count > 0, "No entities alive")
     flags := w.entity_components[e]
-    assert(flags != {}, "Entity is already dead or invalid")
+    // if dead, ignore
+    if flags == {} do return
 
     // remove from all component entity lists
     for component in w.component_entities {

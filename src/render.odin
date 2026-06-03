@@ -2,6 +2,7 @@ package main
 
 import "core:fmt"
 import "core:log"
+import "core:math"
 import "core:strings"
 
 import sdl3 "vendor:sdl3"
@@ -212,5 +213,28 @@ draw_rect :: proc(
     sdl3.GetRenderDrawColor(renderer, &old_r, &old_g, &old_b, &old_a)
     sdl3.SetRenderDrawColor(renderer, r, g, b, a)
     sdl3.RenderFillRect(renderer, rect)
+    sdl3.SetRenderDrawColor(renderer, r, g, b, a)
+}
+
+// draw a circle and reset colour after
+// no idea how this works
+draw_circle :: proc(
+    renderer: ^sdl3.Renderer,
+    radius: f32,
+    cx, cy: f32,
+    r: sdl3.Uint8,
+    g: sdl3.Uint8,
+    b: sdl3.Uint8,
+    a: sdl3.Uint8 = 255,
+) {
+    old_r, old_g, old_b, old_a: sdl3.Uint8
+    sdl3.GetRenderDrawColor(renderer, &old_r, &old_g, &old_b, &old_a)
+    sdl3.SetRenderDrawColor(renderer, r, g, b, a)
+
+    for dy: f32 = -radius; dy <= radius; dy += 1 {
+        dx := math.sqrt(radius * radius - dy * dy)
+        sdl3.RenderLine(renderer, cx - dx, cy + dy, cx + dx, cy + dy)
+    }
+
     sdl3.SetRenderDrawColor(renderer, r, g, b, a)
 }

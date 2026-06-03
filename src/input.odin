@@ -199,12 +199,12 @@ map_sdl_mousebutton :: proc(mouse_button: u8) -> Button {
     case 1:
         return .M_LEFT
     case 2:
-        return .M_RIGHT
-    case 3:
         return .M_MIDDLE
+    case 3:
+        return .M_RIGHT
     }
 
-    return {}
+    return .UNKNOWN
 }
 
 @(private = "file")

@@ -91,4 +91,5 @@ C_AABBCollider :: struct {
     rect:     sdl3.FRect, // offset from the pos
     hit_proc: proc(self: ecs.Entity, other: ecs.Entity),
     physical: bool, // does the collider hit other objects
+    static:   bool,
 }

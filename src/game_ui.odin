@@ -72,15 +72,21 @@ ui_set_hotbar_items :: proc(items: [HOTBAR_SLOTS]Item) {
 ui_draw_hud :: proc() {
     HOTBAR_SLOT_SIZE :: 32
     HOTBAR_GAP :: 50
-    HOTBAR_OFFSET_X :: 0
     HOTBAR_OFFSET_Y :: 10
     HOTBAR_SELECTED_WIDTH :: 10
 
     renderer := ui_state.renderer
 
+    // calculate hotbar offset to make centered
+    hotbar_width := HOTBAR_GAP * HOTBAR_SLOTS
+    offset := ui_state.w - hotbar_width
+    if offset < 0 do log.debug("Hotbar does not fit")
+    hotbar_offset_x := offset / 2
+
+    // draw hotbar
     for i in 0 ..< HOTBAR_SLOTS {
         pos := sdl3.FRect {
-            HOTBAR_OFFSET_X + HOTBAR_GAP * f32(i),
+            f32(hotbar_offset_x) + HOTBAR_GAP * f32(i),
             HOTBAR_OFFSET_Y,
             HOTBAR_SLOT_SIZE,
             HOTBAR_SLOT_SIZE,
@@ -103,10 +109,9 @@ ui_draw_hud :: proc() {
         draw_rect(renderer, &pos, 150, 150, 150, 150)
 
         // draw item
-
         item_at_slot := ui_state.hotbar_items[i]
         if item_at_slot != .none {
-            sprite := state.sprites[item_sprites[item_at_slot]]
+            sprite := state.sprites[item_data[item_at_slot].sprite]
 
             src := sprite.uv
             dest := sdl3.FRect {
