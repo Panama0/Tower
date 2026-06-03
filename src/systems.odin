@@ -266,105 +266,159 @@ pulse :: proc() {
     }
 }
 
+@(private = "file")
+col_correction :: proc(
+    intersection: sdl3.FRect,
+    pos: ^Vec2,
+    other_pos: Vec2,
+    mult: f32,
+) {
+    if intersection.w >= intersection.h {
+        if pos.y <= other_pos.y {
+            pos.y -= intersection.h * mult
+        } else {
+            pos.y += intersection.h * mult
+        }
+    } else {
+        if pos.x <= other_pos.x {
+            pos.x -= intersection.w * mult
+        } else {
+            pos.x += intersection.w * mult
+        }
+    }
+}
+
+handle_collision :: proc(e, other: ecs.Entity) {
+    w := state.gs.world
+    // projectile -> enemy
+    if ecs.has_component(w, e, C_Projectile) &&
+       ecs.has_component(w, other, C_Enemy) {
+        // kill enemy and bullet
+        append(&state.gs.entity_free_list, other)
+        append(&state.gs.entity_free_list, e)
+    }
+
+    // enemy -> player (attack)
+    if ecs.has_component(w, e, C_Enemy) && other == state.gs.player {
+        attack := ecs.get_component(w, e, C_Attack)
+
+        if timer_done_reset(&attack.cooldown_timer) {
+            player_health := ecs.get_component(w, other, C_Health)
+            player_health.current_health -= attack.damage
+
+            dir := linalg.normalize0(
+                ecs.get_component(w, other, C_Transform).pos -
+                ecs.get_component(w, e, C_Transform).pos,
+            )
+
+            pulse := ecs.add_component(w, other, C_Pulse)
+            pulse.vel = dir * attack.knockback
+            pulse.decay = 10
+        }
+    }
+
+}
+
 collision :: proc() {
     w := state.gs.world
 
     colliders := ecs.get_entities_with(w, C_AABBCollider)
 
     Collision :: struct {
-        e:            ecs.Entity,
-        other:        ecs.Entity,
-        intersection: sdl3.FRect,
+        e:     ecs.Entity,
+        other: ecs.Entity,
     }
     collisions := make([dynamic]Collision, context.temp_allocator)
 
-    for e in colliders {
+    for i in 0 ..< len(colliders) {
+        e := colliders[i]
+
         transform := ecs.get_component(w, e, C_Transform)
         collider := ecs.get_component(w, e, C_AABBCollider)
         e_wp := aabb_to_world(collider.rect, transform.pos)
 
-        for other in colliders {
-            if e == other do continue
+        for j in i + 1 ..< len(colliders) {
+            other := colliders[j]
 
             other_collider := ecs.get_component(w, other, C_AABBCollider)
             other_transform := ecs.get_component(w, other, C_Transform)
             o_wp := aabb_to_world(other_collider.rect, other_transform.pos)
 
-            intersection: sdl3.FRect
-            hit := sdl3.GetRectIntersectionFloat(e_wp, o_wp, &intersection)
+            // detect hit
+            hit :=
+                (e_wp.x < o_wp.x + o_wp.w) &&
+                (e_wp.x + e_wp.w > o_wp.x) &&
+                (e_wp.y < o_wp.y + o_wp.h) &&
+                (e_wp.y + e_wp.h > o_wp.y)
 
             if !hit do continue
 
             // hit behaviour
-            // if collider.hit_proc != nil {
-            //     collider.hit_proc(e, other)
-            // }
+            handle_collision(e, other)
+            handle_collision(other, e)
 
-            // projectile -> enemy
-            if ecs.has_component(w, e, C_Projectile) &&
-               ecs.has_component(w, other, C_Enemy) {
-                // kill enemy and bullet
-                append(&state.gs.entity_free_list, other)
-                append(&state.gs.entity_free_list, e)
-            }
 
-            // enemy -> player (attack)
-            if ecs.has_component(w, e, C_Enemy) && other == state.gs.player {
-                attack := ecs.get_component(w, e, C_Attack)
-
-                if timer_done_reset(&attack.cooldown_timer) {
-                    player_health := ecs.get_component(w, other, C_Health)
-                    player_health.current_health -= attack.damage
-
-                    dir := linalg.normalize0(
-                        ecs.get_component(w, other, C_Transform).pos -
-                        ecs.get_component(w, e, C_Transform).pos,
-                    )
-
-                    pulse := ecs.add_component(w, other, C_Pulse)
-                    pulse.vel = dir * attack.knockback
-                    pulse.decay = 10
-                }
-            }
+            // resolutions
 
             // dont need to resolve if either is not physical
             if !collider.physical || !other_collider.physical do continue
 
-            append(&collisions, Collision{e, other, intersection})
+            append(&collisions, Collision{e, other})
         }
     }
 
     // resolve after
-    for col in collisions {
-        e_transform := ecs.get_component(w, col.e, C_Transform)
-        other_transform := ecs.get_component(w, col.other, C_Transform)
+    for i in 0 ..= 3 {
+        for col in collisions {
+            e_transform := ecs.get_component(w, col.e, C_Transform)
+            other_transform := ecs.get_component(w, col.other, C_Transform)
 
-        e_collider := ecs.get_component(w, col.e, C_AABBCollider)
-        other_collider := ecs.get_component(w, col.other, C_AABBCollider)
+            e_collider := ecs.get_component(w, col.e, C_AABBCollider)
+            other_collider := ecs.get_component(w, col.other, C_AABBCollider)
 
-        // skip if e is static (reverse pair handles it)
-        if e_collider.static do continue
+            e_wp := aabb_to_world(e_collider.rect, e_transform.pos)
+            o_wp := aabb_to_world(other_collider.rect, other_transform.pos)
 
-        push_mult: f32 = 1.0
-        if !other_collider.static {
-            push_mult = 0.5  // dynamic-dynamic: each takes half
+            intersection: sdl3.FRect
+            hit := sdl3.GetRectIntersectionFloat(e_wp, o_wp, &intersection)
+            if !hit do continue
+
+            if e_collider.static && other_collider.static do continue
+
+
+            if !e_collider.static && !other_collider.static {
+                // both dynamic — each takes half
+                col_correction(
+                    intersection,
+                    &e_transform.pos,
+                    other_transform.pos,
+                    0.5,
+                )
+                col_correction(
+                    intersection,
+                    &other_transform.pos,
+                    e_transform.pos,
+                    0.5,
+                )
+            } else if !e_collider.static {
+                // only e moves (other is static)
+                col_correction(
+                    intersection,
+                    &e_transform.pos,
+                    other_transform.pos,
+                    1,
+                )
+            } else {
+                // only other moves (e is static)
+                col_correction(
+                    intersection,
+                    &other_transform.pos,
+                    e_transform.pos,
+                    1,
+                )
+            }
         }
 
-        if col.intersection.w <= col.intersection.h {
-            push := col.intersection.w * push_mult
-            if e_transform.pos.x < other_transform.pos.x {
-                e_transform.pos.x -= push
-            } else {
-                e_transform.pos.x += push
-            }
-        } else {
-            push := col.intersection.h * push_mult
-            if e_transform.pos.y < other_transform.pos.y {
-                e_transform.pos.y -= push
-            } else {
-                e_transform.pos.y += push
-            }
-        }
     }
 }
 

@@ -497,7 +497,6 @@ main :: proc() {
         }
 
         // update ent
-        w := state.gs.world
 
         input()
         enemy()
@@ -511,6 +510,7 @@ main :: proc() {
         cullOOB({0 - 20, 0 - 20, WINDOW_WIDTH + 20, WINDOW_HEIGHT + 20})
 
         // debug
+        w := state.gs.world
         hp := ecs.get_component(w, state.gs.player, C_Health)
         if hp.current_health <= 0 do hp.current_health = 100
 
