@@ -10,6 +10,28 @@ Pivot :: enum {
     bottom_right,
 }
 
+DIRECTIONS :: [?]Vec2 {
+    {0, -1}, // North
+    {1, -1}, // North-East
+    {1, 0}, // East
+    {1, 1}, // South-East
+    {0, 1}, // South
+    {-1, 1}, // South-West
+    {-1, 0}, // West
+    {-1, -1}, // North-West
+}
+
+DIRECTIONS_INT :: [?]Vec2i {
+    {0, -1},
+    {1, -1},
+    {1, 0},
+    {1, 1},
+    {0, 1},
+    {-1, 1},
+    {-1, 0},
+    {-1, -1},
+}
+
 pivot_to_vec :: proc(p: Pivot) -> Vec2 {
     switch p {
     case .centre:

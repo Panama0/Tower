@@ -113,6 +113,7 @@ GameState :: struct {
     player:           ecs.Entity,
     items:            [Item]int,
     selected_item:    Item,
+    place_grid:       Grid,
 }
 
 state: State
@@ -396,6 +397,8 @@ main :: proc() {
 
     ui_init(renderer, WINDOW_WIDTH, WINDOW_HEIGHT)
 
+    state.gs.place_grid = make_grid({WINDOW_WIDTH, WINDOW_HEIGHT}, GRID_SIZE)
+
     // temp
     spawn_spawner({450, 150})
     ui_set_hotbar_items(
@@ -412,6 +415,11 @@ main :: proc() {
             .none,
         },
     )
+
+    graph := pathfinding_generate_graph(state.gs.place_grid)
+    defer pathfinding_delete_graph(graph)
+    waypoints := find_path({0, 0}, {100, 100}, graph^, octile)
+    defer delete(waypoints)
 
 
     last_tick: u64 = sdl3.GetTicks()
@@ -474,11 +482,14 @@ main :: proc() {
                 // in future, need to fix?
 
                 grid_mid := grid_get_nearest_centre(
-                    GRID_SIZE,
+                    state.gs.place_grid,
                     {world_x, world_y},
                 )
 
-                grid_tl := grid_get_nearest(GRID_SIZE, {world_x, world_y})
+                grid_tl := grid_get_nearest_tl(
+                    state.gs.place_grid,
+                    {world_x, world_y},
+                )
 
                 #partial switch state.gs.selected_item {
                 case .tower:
@@ -527,7 +538,12 @@ main :: proc() {
         ui_draw_hud()
         draw_player_health(renderer, 640, 360)
 
-        grid_draw(renderer, GRID_SIZE, {WINDOW_WIDTH, WINDOW_HEIGHT})
+        // debug draws
+        grid_draw(renderer, state.gs.place_grid)
+
+        for waypoint, i in waypoints {
+            draw_rect(renderer, &{waypoint.x, waypoint.y, 3, 3}, 0, 255, 0)
+        }
 
         sdl3.RenderPresent(renderer)
 
