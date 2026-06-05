@@ -93,3 +93,9 @@ C_AABBCollider :: struct {
     physical: bool, // does the collider hit other objects
     static:   bool,
 }
+
+
+C_PathfindingTags :: struct {
+    bounds: sdl3.FRect, // bounds are needed to generate the pf map weights
+    tags:   bit_set[PFTags],
+}

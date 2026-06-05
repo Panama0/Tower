@@ -75,3 +75,12 @@ point_in_circle :: proc(px, py, cx, cy, r: f32) -> bool {
 default_collider :: proc(spr_width, spr_height: f32) -> sdl3.FRect {
     return {-(spr_width / 2), -(spr_height / 2), spr_width, spr_height}
 }
+
+rects_intersect :: proc(first, second: sdl3.FRect) -> bool {
+    return(
+        (first.x < second.x + second.w) &&
+        (first.x + first.w > second.x) &&
+        (first.y < second.y + second.h) &&
+        (first.y + first.h > second.y) \
+    )
+}

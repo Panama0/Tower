@@ -195,6 +195,10 @@ spawn_tower :: proc(pos: Vec2) -> ecs.Entity {
     timer := ecs.add_component(w, e, C_Tower)
     timer.timer.interval_ms = 300
 
+    tags := ecs.add_component(w, e, C_PathfindingTags)
+    tags.tags += {.impassible}
+    tags.bounds = default_collider(32, 32)
+
     return e
 }
 
@@ -213,6 +217,10 @@ spawn_wall :: proc(pos: Vec2) -> ecs.Entity {
     coll.static = true
     spr_w := f32(state.sprites[spr.name].width)
     coll.rect = default_collider(spr_w, spr_w)
+
+    tags := ecs.add_component(w, e, C_PathfindingTags)
+    tags.tags += {.impassible}
+    tags.bounds = default_collider(spr_w, spr_w)
 
     return e
 }
@@ -525,6 +533,11 @@ main :: proc() {
         hp := ecs.get_component(w, state.gs.player, C_Health)
         if hp.current_health <= 0 do hp.current_health = 100
 
+        graph := pathfinding_generate_graph(state.gs.place_grid)
+        defer pathfinding_delete_graph(graph)
+        waypoints := find_path({0, 0}, {100, 100}, graph^, octile)
+        defer delete(waypoints)
+
         // draw game
         sdl3.SetRenderDrawColor(renderer, 245, 235, 220, 255)
         sdl3.RenderClear(renderer)
@@ -534,16 +547,20 @@ main :: proc() {
 
         if show_range do draw_range(renderer)
 
-        // draw ui
-        ui_draw_hud()
-        draw_player_health(renderer, 640, 360)
 
         // debug draws
         grid_draw(renderer, state.gs.place_grid)
+        pathfinding_draw_graph(renderer, graph^)
+        fps_string := fmt.tprintf("%.2f", 1 / state.dt)
+        draw_text(renderer, .normal, fps_string, 10, 10)
 
         for waypoint, i in waypoints {
             draw_rect(renderer, &{waypoint.x, waypoint.y, 3, 3}, 0, 255, 0)
         }
+
+        // draw ui
+        ui_draw_hud()
+        draw_player_health(renderer, 640, 360)
 
         sdl3.RenderPresent(renderer)
 
@@ -555,7 +572,7 @@ main :: proc() {
         free_all(context.temp_allocator)
 
 
-        sdl3.Delay(1000 / MAX_FPS)
+        //sdl3.Delay(1000 / MAX_FPS)
     }
 
     delete(state.gs.entity_free_list)

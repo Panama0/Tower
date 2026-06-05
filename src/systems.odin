@@ -345,13 +345,7 @@ collision :: proc() {
             o_wp := aabb_to_world(other_collider.rect, other_transform.pos)
 
             // detect hit
-            hit :=
-                (e_wp.x < o_wp.x + o_wp.w) &&
-                (e_wp.x + e_wp.w > o_wp.x) &&
-                (e_wp.y < o_wp.y + o_wp.h) &&
-                (e_wp.y + e_wp.h > o_wp.y)
-
-            if !hit do continue
+            if !rects_intersect(e_wp, o_wp) do continue
 
             // hit behaviour
             handle_collision(e, other)

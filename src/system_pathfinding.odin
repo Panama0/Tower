@@ -4,6 +4,24 @@ import pq "core:container/priority_queue"
 import "core:math"
 import "core:slice"
 
+import "ecs"
+
+import "vendor:sdl3"
+
+PFTags :: enum {
+    nil,
+    impassible,
+    road,
+    goo,
+}
+
+tag_weights: [PFTags]f32 = {
+    .nil        = 0,
+    .impassible = -1,
+    .road       = 0.5,
+    .goo        = 2,
+}
+
 Node :: struct {
     parent:     ^Node,
     pos:        Vec2i,
@@ -18,7 +36,42 @@ PathfindingGraph :: struct {
     node_grid: Grid,
 }
 
-// for now, dont consider non-pathable terrain
+// debug draw the graph
+pathfinding_draw_graph :: proc(
+    renderer: ^sdl3.Renderer,
+    graph: PathfindingGraph,
+) {
+
+    for node in graph.nodes {
+        node_pos_world := grid_to_world_tl(graph.node_grid, node.pos)
+
+        sq_size := graph.node_grid.sq_size
+        cell_rect := sdl3.FRect {
+            node_pos_world.x,
+            node_pos_world.y,
+            sq_size,
+            sq_size,
+        }
+
+        // determine colour
+        a: sdl3.Uint8 = 100
+        for weight, tag in tag_weights {
+            if node.weight == weight {
+                switch tag {
+                case .nil:
+                case .impassible:
+                    draw_rect(renderer, &cell_rect, 255, 0, 0, a)
+                case .road:
+                    draw_rect(renderer, &cell_rect, 0, 255, 0, a)
+                case .goo:
+                    draw_rect(renderer, &cell_rect, 0, 0, 255, a)
+                }
+            }
+        }
+
+    }
+}
+
 pathfinding_generate_graph :: proc(
     grid: Grid,
     allocator := context.allocator,
@@ -29,13 +82,66 @@ pathfinding_generate_graph :: proc(
 
     graph.nodes = make([]Node, grid.grid_size.x * grid.grid_size.y)
 
-    // set g cost and pos
+    w := state.gs.world
+    entities := ecs.get_entities_with(w, C_PathfindingTags)
+
     for &node, i in graph.nodes {
+        // set g cost and pos
         node.pos = grid_index_to_grid(grid, i)
         node.gCost = math.F32_MAX
     }
 
+    for e in entities {
+        pathfinding_add_entity(graph, e)
+    }
+
+
     return graph
+}
+
+// add a tagged entity to the graph
+pathfinding_add_entity :: proc(graph: ^PathfindingGraph, e: ecs.Entity) {
+
+    w := state.gs.world
+    transform := ecs.get_component(w, e, C_Transform)
+    tags := ecs.get_component(w, e, C_PathfindingTags)
+
+    world_rect := aabb_to_world(tags.bounds, transform.pos)
+
+    // epsilon needed to handle cell borders
+    EPSILON :: 0.001
+
+    // get the coords of the cells that define the rect
+    gp := grid_get_grid_pos(graph.node_grid, {world_rect.x, world_rect.y})
+    gp_max := grid_get_grid_pos(
+        graph.node_grid,
+        {
+            world_rect.x + world_rect.w - EPSILON,
+            world_rect.y + world_rect.h - EPSILON,
+        },
+    )
+
+    // loop through the cells in the rect
+    for y in gp.y ..= gp_max.y {
+        for x in gp.x ..= gp_max.x {
+            cell_gp := Vec2i{x, y}
+            if !grid_in_bounds(graph.node_grid, cell_gp) do continue
+
+            index := grid_to_index(graph.node_grid, cell_gp)
+            node := &graph.nodes[index]
+
+            for tag in tags.tags {
+                node.weight += tag_weights[tag]
+                if tag == .impassible do node.impassible = true
+            }
+        }
+    }
+
+}
+
+// remove a tagged entity from the graph
+pathfinding_remove_entity :: proc(graph: ^PathfindingGraph, e: ecs.Entity) {
+
 }
 
 pathfinding_delete_graph :: proc(graph: ^PathfindingGraph) {
@@ -72,6 +178,7 @@ get_node :: proc(graph: PathfindingGraph, pos: Vec2i) -> (node: ^Node) {
     return &graph.nodes[index]
 }
 
+// A* pathfinding
 find_path :: proc(
     start: Vec2,
     end: Vec2,
