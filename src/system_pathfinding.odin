@@ -23,12 +23,12 @@ tag_weights: [PFTags]f32 = {
 }
 
 Node :: struct {
-    parent:     ^Node,
-    pos:        Vec2i,
-    gCost:      f32,
-    hCost:      f32,
-    weight:     f32, // move cost
-    impassible: bool,
+    parent:            ^Node,
+    pos:               Vec2i,
+    gCost:             f32,
+    hCost:             f32,
+    weight:            f32, // move cost
+    blocking_entities: int, // how many entities are blocking the node
 }
 
 PathfindingGraph :: struct {
@@ -99,14 +99,24 @@ pathfinding_generate_graph :: proc(
     return graph
 }
 
-// add a tagged entity to the graph
-pathfinding_add_entity :: proc(graph: ^PathfindingGraph, e: ecs.Entity) {
-
+// iterate over all cells an entity touches, callback for each node+tag
+pathfinding_for_each_cell :: proc(
+    graph: ^PathfindingGraph,
+    e: ecs.Entity,
+    cb: proc(node: ^Node, tag: PFTags),
+) {
     w := state.gs.world
     transform := ecs.get_component(w, e, C_Transform)
     tags := ecs.get_component(w, e, C_PathfindingTags)
 
     world_rect := aabb_to_world(tags.bounds, transform.pos)
+    // dirty fix for stuckness
+    // world_rect = {
+    //     world_rect.x - 16,
+    //     world_rect.y - 16,
+    //     world_rect.w + 32,
+    //     world_rect.h + 32,
+    // }
 
     // epsilon needed to handle cell borders
     EPSILON :: 0.001
@@ -131,17 +141,26 @@ pathfinding_add_entity :: proc(graph: ^PathfindingGraph, e: ecs.Entity) {
             node := &graph.nodes[index]
 
             for tag in tags.tags {
-                node.weight += tag_weights[tag]
-                if tag == .impassible do node.impassible = true
+                cb(node, tag)
             }
         }
     }
+}
 
+// add a tagged entity to the graph
+pathfinding_add_entity :: proc(graph: ^PathfindingGraph, e: ecs.Entity) {
+    pathfinding_for_each_cell(graph, e, proc(node: ^Node, tag: PFTags) {
+        node.weight += tag_weights[tag]
+        if tag == .impassible do node.blocking_entities += 1
+    })
 }
 
 // remove a tagged entity from the graph
 pathfinding_remove_entity :: proc(graph: ^PathfindingGraph, e: ecs.Entity) {
-
+    pathfinding_for_each_cell(graph, e, proc(node: ^Node, tag: PFTags) {
+        node.weight -= tag_weights[tag]
+        if tag == .impassible do node.blocking_entities -= 1
+    })
 }
 
 pathfinding_delete_graph :: proc(graph: ^PathfindingGraph) {
@@ -149,10 +168,6 @@ pathfinding_delete_graph :: proc(graph: ^PathfindingGraph) {
     free(graph)
 }
 
-// for prioqueue
-node_less :: proc(lhs, rhs: ^Node) -> bool {
-    return (lhs.gCost + lhs.hCost) < (rhs.gCost + rhs.hCost)
-}
 
 // heuristics
 manhattan :: proc(source: Vec2i, dest: Vec2i) -> f32 {
@@ -169,6 +184,12 @@ octile :: proc(source: Vec2i, dest: Vec2i) -> f32 {
     dy := f32(math.abs(source.y - dest.y))
 
     return D * (dx + dy) + (D2 - 2 * D) * math.min(dx, dy)
+}
+
+// for prioqueue
+@(private = "file")
+node_less :: proc(lhs, rhs: ^Node) -> bool {
+    return (lhs.gCost + lhs.hCost) < (rhs.gCost + rhs.hCost)
 }
 
 get_node :: proc(graph: PathfindingGraph, pos: Vec2i) -> (node: ^Node) {
@@ -226,7 +247,8 @@ find_path :: proc(
                 current_node = current_node.parent
             }
 
-            slice.reverse(waypoints[:])
+            //ignore root node
+            slice.reverse(waypoints[:len(waypoints) - 1])
             return waypoints
         }
 
@@ -242,7 +264,7 @@ find_path :: proc(
             if next_pos in closed_set do continue
 
             // if the node is not oob
-            if next_node != nil && !next_node.impassible {
+            if next_node != nil && next_node.blocking_entities == 0 {
                 // account for diagonal movement costing more
                 base_move_cost: f32 = 1.0
                 dx := math.abs(current_node.pos.x - next_node.pos.x)
@@ -265,4 +287,26 @@ find_path :: proc(
 
 
     return waypoints
+}
+
+// system
+pathfinding :: proc(graph: ^PathfindingGraph) {
+    w := state.gs.world
+    finders := ecs.get_entities_with(w, C_PathFollower)
+
+    for e in finders {
+        transform := ecs.get_component(w, e, C_Transform)
+        follower := ecs.get_component(w, e, C_PathFollower)
+
+        if !ecs.is_alive(w, follower.target) do continue
+
+        // gen paths
+        target_pos := ecs.get_component(w, follower.target, C_Transform).pos
+        // update waypoints
+        waypoints := find_path(transform.pos, target_pos, graph^, octile)
+        delete(follower.waypoints)
+        follower.waypoints = waypoints[:]
+        follower.current_waypoint = 0
+    }
+
 }

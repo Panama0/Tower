@@ -102,6 +102,11 @@ kill_entity :: proc(w: ^World, e: Entity) {
     queue.push_back(&w.free_ids, e)
 }
 
+is_alive :: proc(w: ^World, e: Entity) -> bool {
+    flags := w.entity_components[e]
+    return flags != {}
+}
+
 make_world :: proc() -> ^World {
     w := new(World)
     // w.components = make(map[typeid]rawptr)

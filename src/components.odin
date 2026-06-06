@@ -99,3 +99,9 @@ C_PathfindingTags :: struct {
     bounds: sdl3.FRect, // bounds are needed to generate the pf map weights
     tags:   bit_set[PFTags],
 }
+
+C_PathFollower :: struct {
+    waypoints:        []Vec2,
+    current_waypoint: int,
+    target:           ecs.Entity,
+}

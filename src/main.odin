@@ -266,13 +266,16 @@ spawn_enemy :: proc(pos: Vec2) -> ecs.Entity {
     mc.speed = 20
 
     collider := ecs.add_component(w, e, C_AABBCollider)
-    collider.rect = {-8, -16, 8, 32}
+    collider.rect = default_collider(16, 32)
     collider.physical = true
 
     attack := ecs.add_component(w, e, C_Attack)
     attack.damage = 10
     attack.knockback = 350
     attack.cooldown_timer.interval_ms = 1000
+
+    follower := ecs.add_component(w, e, C_PathFollower)
+    follower.target = state.gs.player
 
     return e
 }
@@ -408,7 +411,8 @@ main :: proc() {
     state.gs.place_grid = make_grid({WINDOW_WIDTH, WINDOW_HEIGHT}, GRID_SIZE)
 
     // temp
-    spawn_spawner({450, 150})
+    // spawn_spawner({450, 150})
+    spawn_enemy({450, 150})
     ui_set_hotbar_items(
         {
             .tower,
@@ -426,8 +430,6 @@ main :: proc() {
 
     graph := pathfinding_generate_graph(state.gs.place_grid)
     defer pathfinding_delete_graph(graph)
-    waypoints := find_path({0, 0}, {100, 100}, graph^, octile)
-    defer delete(waypoints)
 
 
     last_tick: u64 = sdl3.GetTicks()
@@ -501,10 +503,12 @@ main :: proc() {
 
                 #partial switch state.gs.selected_item {
                 case .tower:
-                    spawn_tower(grid_tl)
+                    e := spawn_tower(grid_tl)
+                    pathfinding_add_entity(graph, e)
 
                 case .wall:
-                    spawn_wall(grid_mid)
+                    e := spawn_wall(grid_mid)
+                    pathfinding_add_entity(graph, e)
                 }
 
             }
@@ -518,14 +522,21 @@ main :: proc() {
         // update ent
 
         input()
-        enemy()
+
+        //enemy()
         towers()
         spawner()
         pulse()
+
+        pathfinding(graph)
+        path_following()
         movement_control()
+
         collision()
+
         sprite_flip_rotate()
         animation()
+
         cullOOB({0 - 20, 0 - 20, WINDOW_WIDTH + 20, WINDOW_HEIGHT + 20})
 
         // debug
@@ -533,17 +544,11 @@ main :: proc() {
         hp := ecs.get_component(w, state.gs.player, C_Health)
         if hp.current_health <= 0 do hp.current_health = 100
 
-        graph := pathfinding_generate_graph(state.gs.place_grid)
-        defer pathfinding_delete_graph(graph)
-        waypoints := find_path({0, 0}, {100, 100}, graph^, octile)
-        defer delete(waypoints)
-
         // draw game
         sdl3.SetRenderDrawColor(renderer, 245, 235, 220, 255)
         sdl3.RenderClear(renderer)
 
         draw_sprites(renderer)
-        draw_colliders(renderer)
 
         if show_range do draw_range(renderer)
 
@@ -553,10 +558,10 @@ main :: proc() {
         pathfinding_draw_graph(renderer, graph^)
         fps_string := fmt.tprintf("%.2f", 1 / state.dt)
         draw_text(renderer, .normal, fps_string, 10, 10)
+        draw_waypoints(renderer)
+        draw_colliders(renderer)
+        draw_origins(renderer)
 
-        for waypoint, i in waypoints {
-            draw_rect(renderer, &{waypoint.x, waypoint.y, 3, 3}, 0, 255, 0)
-        }
 
         // draw ui
         ui_draw_hud()
@@ -572,7 +577,6 @@ main :: proc() {
         free_all(context.temp_allocator)
 
 
-        //sdl3.Delay(1000 / MAX_FPS)
     }
 
     delete(state.gs.entity_free_list)

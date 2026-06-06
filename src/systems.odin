@@ -416,6 +416,34 @@ collision :: proc() {
     }
 }
 
+path_following :: proc() {
+    w := state.gs.world
+    followers := ecs.get_entities_with(w, C_PathFollower)
+
+    CLOSENESS_NEEDED :: 1
+    for e in followers {
+        transform := ecs.get_component(w, e, C_Transform)
+        waypoints := ecs.get_component(w, e, C_PathFollower)
+        mc := ecs.get_component(w, e, C_MovementController)
+
+
+        if waypoints.current_waypoint >= len(waypoints.waypoints) do continue
+        current_target := waypoints.waypoints[waypoints.current_waypoint]
+
+        // check off waypoints
+        if linalg.distance(transform.pos, current_target) <= CLOSENESS_NEEDED {
+            waypoints.current_waypoint += 1
+        }
+
+        // ignore those that are finished
+        if waypoints.current_waypoint >= len(waypoints.waypoints) do continue
+        current_target = waypoints.waypoints[waypoints.current_waypoint]
+
+        // move
+        mc.target_dir = linalg.normalize(current_target - transform.pos)
+    }
+}
+
 // --- Drawing ---
 
 //TODO: maybe we can remove the width when we create app subsystem
@@ -452,6 +480,54 @@ draw_colliders :: proc(renderer: ^sdl3.Renderer) {
         aabb_world := aabb_to_world(aabb.rect, transform.pos)
 
         draw_rect(renderer, &aabb_world, 0, 150, 150, 100)
+    }
+}
+
+draw_waypoints :: proc(renderer: ^sdl3.Renderer) {
+    w := state.gs.world
+    followers := ecs.get_entities_with(w, C_PathFollower)
+
+    for e in followers {
+        transform := ecs.get_component(w, e, C_Transform)
+        waypoints := ecs.get_component(w, e, C_PathFollower)
+
+        for waypoint in waypoints.waypoints {
+            DOT_SIZE :: 2
+            draw_rect(
+                renderer,
+                &{
+                    waypoint.x - DOT_SIZE / 2,
+                    waypoint.y - DOT_SIZE / 2,
+                    DOT_SIZE,
+                    DOT_SIZE,
+                },
+                0,
+                255,
+                0,
+            )
+        }
+    }
+}
+
+draw_origins :: proc(renderer: ^sdl3.Renderer) {
+    w := state.gs.world
+    entities := ecs.get_entities_with(w, C_Transform)
+
+    for e in entities {
+        transform := ecs.get_component(w, e, C_Transform)
+        DOT_SIZE :: 2
+        draw_rect(
+            renderer,
+            &{
+                transform.pos.x - DOT_SIZE / 2,
+                transform.pos.y - DOT_SIZE / 2,
+                DOT_SIZE,
+                DOT_SIZE,
+            },
+            0,
+            0,
+            0,
+        )
     }
 }
 
