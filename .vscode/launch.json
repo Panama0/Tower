@@ -1,0 +1,13 @@
+{
+    "$schema": "https://raw.githubusercontent.com/mfussenegger/dapconfig-schema/master/dapconfig-schema.json",
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "codelldb",
+			"request": "launch",
+            "name": "launch debug",
+			"console": "integratedTerminal",
+			"program": "out/debug/main"
+        }
+    ]
+}
