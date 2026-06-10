@@ -128,8 +128,6 @@ Action :: enum {
     place_item,
     show_range, // show the place radius of current item
     rotate,
-    next_item,
-    prev_item,
 }
 
 action_bindings: map[Bind]Action = {
@@ -321,6 +319,15 @@ register_components :: proc(w: ^ecs.World) {
     ecs.register_component(w, C_Enemy)
     ecs.register_component(w, C_MovementController)
     ecs.register_component(w, C_Pulse)
+    ecs.register_component(w, C_Health)
+    ecs.register_component(w, C_Attack)
+    ecs.register_component(w, C_Input)
+    ecs.register_component(w, C_AABBCollider)
+    ecs.register_component(w, C_PathfindingTags)
+    ecs.register_component(w, C_PathFollower, clean_path_follower)
+}
+
+handle_resize :: proc(new_size: Vec2i) {
 }
 
 main :: proc() {
@@ -412,7 +419,7 @@ main :: proc() {
 
     // temp
     // spawn_spawner({450, 150})
-    spawn_enemy({450, 150})
+    enemy := spawn_enemy({450, 150})
     ui_set_hotbar_items(
         {
             .tower,
@@ -428,8 +435,16 @@ main :: proc() {
         },
     )
 
-    graph := pathfinding_generate_graph(state.gs.place_grid)
+    w := state.gs.world
+    enemy_bounds: sdl3.FRect = {}
+    if ecs.has_component(w, enemy, C_AABBCollider) {
+        enemy_bounds = ecs.get_component(w, enemy, C_AABBCollider).rect
+    }
+    graph := pathfinding_generate_graph(state.gs.place_grid, enemy_bounds)
     defer pathfinding_delete_graph(graph)
+
+    pf_interval: sdl3.Uint64 = 1000
+    last_pf := sdl3.GetTicks()
 
 
     last_tick: u64 = sdl3.GetTicks()
@@ -528,7 +543,12 @@ main :: proc() {
         spawner()
         pulse()
 
-        pathfinding(graph)
+        if last_pf + pf_interval < sdl3.GetTicks() {
+            pathfinding(graph)
+
+            last_pf = sdl3.GetTicks()
+        }
+
         path_following()
         movement_control()
 
@@ -575,9 +595,18 @@ main :: proc() {
         reset_input_state(&state.input)
         state.occurred_actions = {}
         free_all(context.temp_allocator)
-
-
     }
+
+    ecs.remove_component(state.gs.world, state.gs.player, C_Transform)
+
+    // clean all entity memory by killing all
+    entities: [dynamic]ecs.Entity
+    defer delete(entities)
+    ecs.get_entities(state.gs.world, &entities)
+    for e in entities {
+        append(&state.gs.entity_free_list, e)
+    }
+    free_dead_ents()
 
     delete(state.gs.entity_free_list)
 

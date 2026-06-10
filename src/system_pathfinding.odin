@@ -2,6 +2,7 @@ package main
 
 import pq "core:container/priority_queue"
 import "core:math"
+import "core:math/linalg"
 import "core:slice"
 
 import "ecs"
@@ -32,8 +33,9 @@ Node :: struct {
 }
 
 PathfindingGraph :: struct {
-    nodes:     []Node,
-    node_grid: Grid,
+    nodes:          []Node,
+    node_grid:      Grid,
+    subject_bounds: sdl3.FRect, // need to store so that we can generate the graph and add entities
 }
 
 // debug draw the graph
@@ -41,6 +43,11 @@ pathfinding_draw_graph :: proc(
     renderer: ^sdl3.Renderer,
     graph: PathfindingGraph,
 ) {
+    impassable_color: [4]f32 = {255, 0, 0, 150} // red
+    passable_color: [4]f32 = {0, 255, 0, 150} // green
+
+    max: f32 = 2
+    min: f32 = 0
 
     for node in graph.nodes {
         node_pos_world := grid_to_world_tl(graph.node_grid, node.pos)
@@ -53,27 +60,40 @@ pathfinding_draw_graph :: proc(
             sq_size,
         }
 
-        // determine colour
-        a: sdl3.Uint8 = 100
-        for weight, tag in tag_weights {
-            if node.weight == weight {
-                switch tag {
-                case .nil:
-                case .impassible:
-                    draw_rect(renderer, &cell_rect, 255, 0, 0, a)
-                case .road:
-                    draw_rect(renderer, &cell_rect, 0, 255, 0, a)
-                case .goo:
-                    draw_rect(renderer, &cell_rect, 0, 0, 255, a)
-                }
+        // unweighted nodes can be ignored
+        if node.weight != 0 {
+            actual_weight := node.weight
+            // weights under 0 are impassible, so have to set to max
+            if node.weight < 0 {
+                actual_weight = max
+            } else {
+                // clamp the value
+                actual_weight = math.clamp(node.weight, min, max)
             }
-        }
 
+            scalar := actual_weight / max
+
+            t: [4]f32 = {scalar, scalar, scalar, 0}
+            lerped := linalg.lerp(passable_color, impassable_color, t)
+
+            // truncate to uint
+            sdl_colour := cast([4]sdl3.Uint8)lerped
+
+            draw_rect(
+                renderer,
+                &cell_rect,
+                sdl_colour.r,
+                sdl_colour.g,
+                sdl_colour.b,
+                sdl_colour.a,
+            )
+        }
     }
 }
 
 pathfinding_generate_graph :: proc(
     grid: Grid,
+    bounds: sdl3.FRect = {},
     allocator := context.allocator,
     loc := #caller_location,
 ) -> ^PathfindingGraph {
@@ -81,6 +101,7 @@ pathfinding_generate_graph :: proc(
     graph.node_grid = grid
 
     graph.nodes = make([]Node, grid.grid_size.x * grid.grid_size.y)
+    graph.subject_bounds = bounds
 
     w := state.gs.world
     entities := ecs.get_entities_with(w, C_PathfindingTags)
@@ -110,13 +131,21 @@ pathfinding_for_each_cell :: proc(
     tags := ecs.get_component(w, e, C_PathfindingTags)
 
     world_rect := aabb_to_world(tags.bounds, transform.pos)
-    // dirty fix for stuckness
-    // world_rect = {
-    //     world_rect.x - 16,
-    //     world_rect.y - 16,
-    //     world_rect.w + 32,
-    //     world_rect.h + 32,
-    // }
+
+    // increase the size of the obstacle such that the entity doesn't get stuck
+    if graph.subject_bounds.w != 0 || graph.subject_bounds.h != 0 {
+        cell_size := graph.node_grid.sq_size
+        bounds := graph.subject_bounds
+        w := 0 if bounds.w <= cell_size else bounds.w
+        h := 0 if bounds.h <= cell_size else bounds.h
+
+        world_rect = {
+            world_rect.x - w / 2,
+            world_rect.y - h / 2,
+            world_rect.w + w,
+            world_rect.h + h,
+        }
+    }
 
     // epsilon needed to handle cell borders
     EPSILON :: 0.001
@@ -207,7 +236,11 @@ find_path :: proc(
     heuristic: proc(source: Vec2i, dest: Vec2i) -> f32,
 ) -> [dynamic]Vec2 {
     // make a clone so that we can modify
-    local_graph := PathfindingGraph{slice.clone(graph.nodes), graph.node_grid}
+    local_graph := PathfindingGraph {
+        nodes          = slice.clone(graph.nodes),
+        node_grid      = graph.node_grid,
+        subject_bounds = graph.subject_bounds,
+    }
     defer delete(local_graph.nodes)
 
     waypoints: [dynamic]Vec2
@@ -247,8 +280,10 @@ find_path :: proc(
                 current_node = current_node.parent
             }
 
-            //ignore root node
-            slice.reverse(waypoints[:len(waypoints) - 1])
+            // ignore root node
+            pop(&waypoints)
+
+            slice.reverse(waypoints[:])
             return waypoints
         }
 
@@ -265,10 +300,26 @@ find_path :: proc(
 
             // if the node is not oob
             if next_node != nil && next_node.blocking_entities == 0 {
-                // account for diagonal movement costing more
-                base_move_cost: f32 = 1.0
+
                 dx := math.abs(current_node.pos.x - next_node.pos.x)
                 dy := math.abs(current_node.pos.y - next_node.pos.y)
+
+                // If diagonal, check the two adjacent cardinal cells
+                if d.x != 0 && d.y != 0 {
+                    card1 := current_node.pos + Vec2i{d.x, 0}
+                    card2 := current_node.pos + Vec2i{0, d.y}
+                    n1 := get_node(local_graph, card1)
+                    n2 := get_node(local_graph, card2)
+                    if n1 == nil ||
+                       n1.blocking_entities > 0 ||
+                       n2 == nil ||
+                       n2.blocking_entities > 0 {
+                        continue // skip this diagonal — would clip the corner
+                    }
+                }
+
+                // account for diagonal movement costing more
+                base_move_cost: f32 = 1.0
                 if dx == 1 && dy == 1 do base_move_cost *= math.SQRT_TWO
 
                 new_g := current_node.gCost + base_move_cost + next_node.weight
@@ -308,5 +359,4 @@ pathfinding :: proc(graph: ^PathfindingGraph) {
         follower.waypoints = waypoints[:]
         follower.current_waypoint = 0
     }
-
 }

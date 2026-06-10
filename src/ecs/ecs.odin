@@ -16,19 +16,23 @@ ComponentArray :: struct($T: typeid) {
     data: [MAX_ENTITIES]T,
 }
 
+CleanFunc :: proc(e: Entity)
+
 World :: struct {
-    alive_count:        Entity,
-    next_id:            Entity,
-    free_ids:           queue.Queue(Entity),
-    next_component_id:  ComponentID,
-    components:         map[typeid]rawptr,
-    component_ids:      map[typeid]ComponentID,
+    alive_count:           Entity,
+    next_id:               Entity,
+    free_ids:              queue.Queue(Entity),
+    next_component_id:     ComponentID,
+    components:            map[typeid]rawptr,
+    component_ids:         map[typeid]ComponentID,
+    component_clean_funcs: map[typeid]CleanFunc,
 
     // keep track of what components each entity has
-    entity_components:  map[Entity]ComponentFlags,
-    component_entities: map[typeid][dynamic]Entity,
+    entity_components:     map[Entity]ComponentFlags,
+    component_entities:    map[typeid][dynamic]Entity,
 }
 
+default_clean_func: CleanFunc = {}
 
 // get all alive, O(n)
 get_entities :: proc(w: ^World, out: ^[dynamic]Entity) {
@@ -87,6 +91,16 @@ kill_entity :: proc(w: ^World, e: Entity) {
     // if dead, ignore
     if flags == {} do return
 
+    // call clean funcs for each component
+    for type, id in w.component_ids {
+        if id in flags {
+            if clean_func, ok := w.component_clean_funcs[type];
+               ok && clean_func != nil {
+                clean_func(e)
+            }
+        }
+    }
+
     // remove from all component entity lists
     for component in w.component_entities {
         for ent, i in w.component_entities[component] {
@@ -95,7 +109,9 @@ kill_entity :: proc(w: ^World, e: Entity) {
                 break
             }
         }
+
     }
+
     // clear the entity's component flags
     w.entity_components[e] = {}
     w.alive_count -= 1
@@ -126,6 +142,7 @@ world_destroy :: proc(w: ^World) {
     }
     delete(w.component_entities)
     queue.destroy(&w.free_ids)
+    delete(w.component_clean_funcs)
     free(w)
 }
 
@@ -138,7 +155,11 @@ has_component :: proc(w: ^World, e: Entity, $T: typeid) -> bool {
     return id_of(w, T) in w.entity_components[e]
 }
 
-register_component :: proc(w: ^World, $T: typeid) {
+register_component :: proc(
+    w: ^World,
+    $T: typeid,
+    clean_func := default_clean_func,
+) {
     if T in w.components {
         return
     }
@@ -148,6 +169,8 @@ register_component :: proc(w: ^World, $T: typeid) {
 
     w.next_component_id += 1
     w.component_ids[T] = w.next_component_id
+
+    w.component_clean_funcs[T] = clean_func
 }
 
 is_registered :: proc(w: ^World, $T: typeid) -> bool {
@@ -191,6 +214,11 @@ get_component :: proc(w: ^World, e: Entity, $T: typeid) -> ^T {
 remove_component :: proc(w: ^World, e: Entity, $T: typeid) {
     arr := transmute(^ComponentArray(T))w.components[T]
     if !has_component(w, e, T) do return
+
+    clean_func := w.component_clean_funcs[T]
+    if clean_func != nil {
+        clean_func(e)
+    }
 
     arr.data[e] = {}
     w.entity_components[e] -= {id_of(w, T)}

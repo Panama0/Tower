@@ -105,3 +105,8 @@ C_PathFollower :: struct {
     current_waypoint: int,
     target:           ecs.Entity,
 }
+
+clean_path_follower: ecs.CleanFunc = proc(e: ecs.Entity) {
+    follower := ecs.get_component(state.gs.world, e, C_PathFollower)
+    delete(follower.waypoints)
+}
