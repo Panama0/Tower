@@ -1,5 +1,6 @@
 package main
 
+import "core:log"
 import "vendor:sdl3"
 
 // #todo, remove this and make everything operate via params passed down
@@ -248,13 +249,19 @@ reset_input_state :: proc(input: ^InputState) {
     state.input.scroll_y = 0
 }
 
-handle_sdl_events :: proc() {
+handle_sdl_events :: proc(window: ^sdl3.Window) {
     ev: sdl3.Event
     for sdl3.PollEvent(&ev) {
         #partial switch ev.type {
+        // system
+        case .WINDOW_RESIZED:
+            log.debug("resize event, ", ev.window)
+            handle_resize(window, {ev.window.data1, ev.window.data2})
+
         case .QUIT:
             state.running = false
 
+        // input
         case .MOUSE_MOTION:
             state.input.mouse_x = ev.motion.x
             state.input.mouse_y = ev.motion.y
@@ -290,6 +297,7 @@ handle_sdl_events :: proc() {
             if ev.key.repeat {
                 state.input.keys[ev.key.scancode] += {.repeat}
             }
+
         }
 
     }

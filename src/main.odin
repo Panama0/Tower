@@ -47,6 +47,7 @@ Sprite_Data :: struct {
 FontName :: enum {
     Minecraft,
     LiberationSans,
+    NotoSans,
 }
 
 // internal name
@@ -60,7 +61,7 @@ FontStyle :: enum {
 
 font_data: [FontStyle]FontData = {
     .normal = {.Minecraft, 16},
-    .debug  = {.LiberationSans, 16},
+    .debug  = {.NotoSans, 6},
 }
 
 FontData :: struct {
@@ -103,6 +104,8 @@ State :: struct {
     atlas:            Atlas,
     sprites:          [SpriteName]Sprite,
     fonts:            [FontStyle]^ttf.Font,
+    // window stuff
+    fullscreen:       bool,
 }
 
 GameState :: struct {
@@ -128,6 +131,8 @@ Action :: enum {
     place_item,
     show_range, // show the place radius of current item
     rotate,
+    change_size, // debug
+    toggle_fullscreen,
 }
 
 action_bindings: map[Bind]Action = {
@@ -139,6 +144,8 @@ action_bindings: map[Bind]Action = {
     {.M_LEFT, .released} = .place_item,
     {.M_RIGHT, .down} = .show_range,
     {.R, .pressed} = .rotate,
+    {.M, .pressed} = .change_size,
+    {.F, .pressed} = .toggle_fullscreen,
 }
 
 action_occurred :: proc(action: Action) -> bool {
@@ -327,7 +334,28 @@ register_components :: proc(w: ^ecs.World) {
     ecs.register_component(w, C_PathFollower, clean_path_follower)
 }
 
-handle_resize :: proc(new_size: Vec2i) {
+//TODO: This does not work on wayland
+resize_window :: proc(window: ^sdl3.Window, new_size: Vec2i) {
+    ok := sdl3.SetWindowSize(window, new_size.x, new_size.y)
+
+    log.debug("resizing to ", new_size)
+}
+
+handle_resize :: proc(window: ^sdl3.Window, new_size: Vec2i) {
+    win_w_before: i32
+    win_h_before: i32
+    sdl3.GetWindowSize(window, &win_w_before, &win_h_before)
+
+
+    // scale text
+    rect: sdl3.FRect
+    sdl3.GetRenderLogicalPresentationRect(sdl3.GetRenderer(window), &rect)
+
+    scale := rect.w / 640
+
+    for font, style in state.fonts {
+        ttf.SetFontSize(font, font_data[style].size_pt * scale)
+    }
 }
 
 main :: proc() {
@@ -359,8 +387,8 @@ main :: proc() {
     }
 
 
-    WINDOW_WIDTH :: 640
-    WINDOW_HEIGHT :: 360
+    LOGICAL_WIDTH :: 640
+    LOGICAL_HEIGHT :: 360
     MAX_FPS :: 60
 
     // window
@@ -371,9 +399,9 @@ main :: proc() {
     renderer: ^sdl3.Renderer
     sdl3.CreateWindowAndRenderer(
         "hi",
-        WINDOW_WIDTH,
-        WINDOW_HEIGHT,
-        {},
+        LOGICAL_WIDTH,
+        LOGICAL_HEIGHT,
+        {.MINIMIZED},
         &window,
         &renderer,
     )
@@ -381,8 +409,8 @@ main :: proc() {
     // we can do stretching/letterbox via
     sdl3.SetRenderLogicalPresentation(
         renderer,
-        WINDOW_WIDTH,
-        WINDOW_HEIGHT,
+        LOGICAL_WIDTH,
+        LOGICAL_HEIGHT,
         .INTEGER_SCALE,
     )
 
@@ -398,7 +426,7 @@ main :: proc() {
 
     // init "renderer"
     load_sprites_and_atlas(renderer)
-    load_fonts(renderer)
+    load_fonts()
     // unload fonts
     defer {
         for font in state.fonts {
@@ -413,9 +441,9 @@ main :: proc() {
     register_components(state.gs.world)
     state.gs.player = spawn_player()
 
-    ui_init(renderer, WINDOW_WIDTH, WINDOW_HEIGHT)
+    ui_init(renderer, LOGICAL_WIDTH, LOGICAL_HEIGHT)
 
-    state.gs.place_grid = make_grid({WINDOW_WIDTH, WINDOW_HEIGHT}, GRID_SIZE)
+    state.gs.place_grid = make_grid({LOGICAL_WIDTH, LOGICAL_HEIGHT}, GRID_SIZE)
 
     // temp
     // spawn_spawner({450, 150})
@@ -446,6 +474,7 @@ main :: proc() {
     pf_interval: sdl3.Uint64 = 1000
     last_pf := sdl3.GetTicks()
 
+    // ---
 
     last_tick: u64 = sdl3.GetTicks()
     current_tick: u64
@@ -457,7 +486,7 @@ main :: proc() {
 
         state.dt = f32(current_tick - last_tick) / 1000
 
-        handle_sdl_events()
+        handle_sdl_events(window)
 
         // ui must be first as it consumes keys
         ui_update()
@@ -534,6 +563,15 @@ main :: proc() {
             show_range = true
         }
 
+        if action_occurred(.change_size) {
+            resize_window(window, {1280, 720})
+        }
+
+        if action_occurred(.toggle_fullscreen) {
+            state.fullscreen = !state.fullscreen
+            sdl3.SetWindowFullscreen(window, state.fullscreen)
+        }
+
         // update ent
 
         input()
@@ -557,7 +595,7 @@ main :: proc() {
         sprite_flip_rotate()
         animation()
 
-        cullOOB({0 - 20, 0 - 20, WINDOW_WIDTH + 20, WINDOW_HEIGHT + 20})
+        cullOOB({0 - 20, 0 - 20, LOGICAL_WIDTH + 20, LOGICAL_HEIGHT + 20})
 
         // debug
         w := state.gs.world
@@ -574,10 +612,10 @@ main :: proc() {
 
 
         // debug draws
-        grid_draw(renderer, state.gs.place_grid)
+        // grid_draw(renderer, state.gs.place_grid)
         pathfinding_draw_graph(renderer, graph^)
         fps_string := fmt.tprintf("%.2f", 1 / state.dt)
-        draw_text(renderer, .normal, fps_string, 10, 10)
+        draw_text(renderer, .debug, fps_string, 10, 10)
         draw_waypoints(renderer)
         draw_colliders(renderer)
         draw_origins(renderer)
@@ -609,6 +647,8 @@ main :: proc() {
     free_dead_ents()
 
     delete(state.gs.entity_free_list)
+
+    sdl3.DestroyTexture(state.atlas.texture)
 
     sdl3.DestroyRenderer(renderer)
     sdl3.DestroyWindow(window)

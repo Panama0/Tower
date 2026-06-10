@@ -16,7 +16,6 @@ Sprite :: struct {
 
 Atlas :: struct {
     w, h:    int,
-    // FIX: this needs to be deleted (maybe)
     texture: ^sdl3.Texture,
 }
 
@@ -127,7 +126,7 @@ load_sprites_and_atlas :: proc(renderer: ^sdl3.Renderer) {
     sdl3.SavePNG(atlas_surface, "res/atlas.png")
 }
 
-load_fonts :: proc(renderer: ^sdl3.Renderer) {
+load_fonts :: proc() {
     FONT_DIR :: "res/fonts/"
 
     for style in FontStyle {
@@ -138,6 +137,8 @@ load_fonts :: proc(renderer: ^sdl3.Renderer) {
             strings.clone_to_cstring(path, context.temp_allocator),
             data.size_pt,
         )
+
+        ttf.SetFontHinting(font, .NORMAL)
 
         if font == nil {
             log.debugf(
@@ -151,20 +152,39 @@ load_fonts :: proc(renderer: ^sdl3.Renderer) {
     }
 }
 
+// draw text at native res
 draw_text :: proc(
     renderer: ^sdl3.Renderer,
     style: FontStyle,
     text: string,
     x, y: f32,
+    colour: sdl3.Color = {0, 0, 0, 255},
 ) {
-    fg := sdl3.Color{0, 0, 0, 255} // White
+    // save the old logical presentation settings
+    logical_w, logical_h: i32
+    mode: sdl3.RendererLogicalPresentation
+    sdl3.GetRenderLogicalPresentation(renderer, &logical_w, &logical_h, &mode)
+
+    // save the coords in world space
+    win_x, win_y: f32
+    sdl3.RenderCoordinatesToWindow(renderer, x, y, &win_x, &win_y)
+
+    // clear out logical presentation and defer restoration
+    sdl3.SetRenderLogicalPresentation(renderer, 0, 0, .DISABLED)
+    defer sdl3.SetRenderLogicalPresentation(
+        renderer,
+        logical_w,
+        logical_h,
+        mode,
+    )
+
     font := state.fonts[style]
 
-    surface := ttf.RenderText_Solid(
+    surface := ttf.RenderText_Blended(
         font,
         strings.clone_to_cstring(text, context.temp_allocator),
         0,
-        fg,
+        colour,
     )
 
     if surface == nil {
@@ -177,7 +197,6 @@ draw_text :: proc(
     }
     defer sdl3.DestroySurface(surface)
 
-    // draw
     texture := sdl3.CreateTextureFromSurface(renderer, surface)
 
     if texture == nil {
@@ -186,13 +205,9 @@ draw_text :: proc(
     }
     defer sdl3.DestroyTexture(texture)
 
-
-    // should be removed
-    sdl3.SetTextureScaleMode(texture, .NEAREST)
-
     dst := sdl3.FRect {
-        x = x,
-        y = y,
+        x = win_x,
+        y = win_y,
         w = f32(surface.w),
         h = f32(surface.h),
     }
