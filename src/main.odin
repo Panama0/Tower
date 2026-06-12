@@ -101,6 +101,7 @@ State :: struct {
     running:          bool,
     input:            InputState,
     occurred_actions: [Action]bool,
+    // render stuff
     atlas:            Atlas,
     sprites:          [SpriteName]Sprite,
     fonts:            [FontStyle]^ttf.Font,
@@ -117,6 +118,8 @@ GameState :: struct {
     items:            [Item]int,
     selected_item:    Item,
     place_grid:       Grid,
+    game_camera:      Camera,
+    ui_camera:        Camera,
 }
 
 state: State
@@ -296,9 +299,6 @@ spawn_bullet :: proc(pos: Vec2) -> ecs.Entity {
     spr.name = .bullet_test
     spr.flip_mode = .rotate
 
-    x, y: f32
-    g := math.atan2(x, y)
-
     ecs.add_component(w, e, C_Projectile)
     ecs.add_component(w, e, C_MovementController)
 
@@ -336,21 +336,23 @@ register_components :: proc(w: ^ecs.World) {
 
 //TODO: This does not work on wayland
 resize_window :: proc(window: ^sdl3.Window, new_size: Vec2i) {
+    // emits a window resized event
     ok := sdl3.SetWindowSize(window, new_size.x, new_size.y)
 
     log.debug("resizing to ", new_size)
 }
 
 handle_resize :: proc(window: ^sdl3.Window, new_size: Vec2i) {
-    win_w_before: i32
-    win_h_before: i32
-    sdl3.GetWindowSize(window, &win_w_before, &win_h_before)
+    // win_w_before: i32
+    // win_h_before: i32
+    // sdl3.GetWindowSize(window, &win_w_before, &win_h_before)
 
 
     // scale text
     rect: sdl3.FRect
     sdl3.GetRenderLogicalPresentationRect(sdl3.GetRenderer(window), &rect)
 
+    //TODO: hardcoded
     scale := rect.w / 640
 
     for font, style in state.fonts {
@@ -395,44 +397,18 @@ main :: proc() {
     ok := sdl3.Init({.VIDEO})
     if !ok do log.fatalf("Could not initialise SDL: %v", sdl3.GetError())
 
-    window: ^sdl3.Window
-    renderer: ^sdl3.Renderer
-    sdl3.CreateWindowAndRenderer(
-        "hi",
+    window := sdl3.CreateWindow("game", 640, 360, {})
+    if window == nil do log.panicf("Could not open window with error: %v", sdl3.GetError())
+
+    renderer := make_renderer(window, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+
+    state.gs.game_camera = {
+        {LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2},
         LOGICAL_WIDTH,
         LOGICAL_HEIGHT,
-        {.MINIMIZED},
-        &window,
-        &renderer,
-    )
-
-    // we can do stretching/letterbox via
-    sdl3.SetRenderLogicalPresentation(
-        renderer,
-        LOGICAL_WIDTH,
-        LOGICAL_HEIGHT,
-        .INTEGER_SCALE,
-    )
-
-    // for opacity
-    sdl3.SetRenderDrawBlendMode(renderer, {.BLEND})
-
-    // fonts
-
-    if !ttf.Init() {
-        log.fatalf("TTF init failed with error: %v", sdl3.GetError())
     }
-    defer ttf.Quit()
 
-    // init "renderer"
-    load_sprites_and_atlas(renderer)
-    load_fonts()
-    // unload fonts
-    defer {
-        for font in state.fonts {
-            ttf.CloseFont(font)
-        }
-    }
+    world_bounds := sdl3.FRect{0, 0, 1280, 720}
 
     // init game stuff
     state.gs.world = ecs.make_world()
@@ -463,12 +439,15 @@ main :: proc() {
         },
     )
 
+    //TODO: remove this? need to store graphs centrally somewhere based on collider
     w := state.gs.world
     enemy_bounds: sdl3.FRect = {}
     if ecs.has_component(w, enemy, C_AABBCollider) {
         enemy_bounds = ecs.get_component(w, enemy, C_AABBCollider).rect
     }
-    graph := pathfinding_generate_graph(state.gs.place_grid, enemy_bounds)
+
+    pf_grid := make_grid({1280, 720}, 16)
+    graph := pathfinding_generate_graph(pf_grid, enemy_bounds)
     defer pathfinding_delete_graph(graph)
 
     pf_interval: sdl3.Uint64 = 1000
@@ -516,34 +495,26 @@ main :: proc() {
         }
 
         if action_occurred(.place_item) {
-            world_x, world_y: f32
-            // not sure if this is right
-            sdl3.RenderCoordinatesFromWindow(
-                renderer,
-                state.input.mouse_x,
-                state.input.mouse_y,
-                &world_x,
-                &world_y,
-            )
+            renderer.cam = state.gs.game_camera
 
+            world_pos := render_screen_to_world(
+                renderer,
+                {i32(state.input.mouse_x), i32(state.input.mouse_y)},
+            )
             // check if in range
             origin := &ecs.get_component(state.gs.world, state.gs.player, C_Transform).pos
             range := item_data[state.gs.selected_item].place_radius
 
-            if range == 0 ||
-               point_in_circle(world_x, world_y, origin.x, origin.y, range) {
+            if range == 0 || point_in_circle(world_pos, origin^, range) {
 
                 // in future, need to fix?
 
                 grid_mid := grid_get_nearest_centre(
                     state.gs.place_grid,
-                    {world_x, world_y},
+                    world_pos,
                 )
 
-                grid_tl := grid_get_nearest_tl(
-                    state.gs.place_grid,
-                    {world_x, world_y},
-                )
+                grid_tl := grid_get_nearest_tl(state.gs.place_grid, world_pos)
 
                 #partial switch state.gs.selected_item {
                 case .tower:
@@ -556,6 +527,8 @@ main :: proc() {
                 }
 
             }
+
+            renderer.cam = state.gs.ui_camera
         }
 
         show_range := false
@@ -590,22 +563,20 @@ main :: proc() {
         path_following()
         movement_control()
 
+        update_game_camera(world_bounds)
+
         collision()
 
         sprite_flip_rotate()
         animation()
 
-        cullOOB({0 - 20, 0 - 20, LOGICAL_WIDTH + 20, LOGICAL_HEIGHT + 20})
-
-        // debug
-        w := state.gs.world
-        hp := ecs.get_component(w, state.gs.player, C_Health)
-        if hp.current_health <= 0 do hp.current_health = 100
+        cullOOB(world_bounds)
 
         // draw game
-        sdl3.SetRenderDrawColor(renderer, 245, 235, 220, 255)
-        sdl3.RenderClear(renderer)
+        sdl3.SetRenderDrawColor(renderer.sdl_renderer, 245, 235, 220, 255)
+        sdl3.RenderClear(renderer.sdl_renderer)
 
+        renderer.cam = state.gs.game_camera
         draw_sprites(renderer)
 
         if show_range do draw_range(renderer)
@@ -614,18 +585,23 @@ main :: proc() {
         // debug draws
         // grid_draw(renderer, state.gs.place_grid)
         pathfinding_draw_graph(renderer, graph^)
-        fps_string := fmt.tprintf("%.2f", 1 / state.dt)
-        draw_text(renderer, .debug, fps_string, 10, 10)
         draw_waypoints(renderer)
         draw_colliders(renderer)
         draw_origins(renderer)
 
+        // world bounds
+        render_draw_rect(renderer, &world_bounds, 0, 255, 0, 255, false)
 
         // draw ui
+
+        renderer.cam = state.gs.ui_camera
         ui_draw_hud()
         draw_player_health(renderer, 640, 360)
 
-        sdl3.RenderPresent(renderer)
+        fps_string := fmt.tprintf("%.2f", 1 / state.dt)
+        render_draw_text(renderer, .debug, fps_string, 10, 10)
+
+        sdl3.RenderPresent(renderer.sdl_renderer)
 
         state.gs.ticks += 1
 
@@ -650,7 +626,8 @@ main :: proc() {
 
     sdl3.DestroyTexture(state.atlas.texture)
 
-    sdl3.DestroyRenderer(renderer)
+    render_shutdown(renderer)
+
     sdl3.DestroyWindow(window)
     sdl3.Quit()
 }

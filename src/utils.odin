@@ -65,10 +65,14 @@ timer_done_reset :: proc(timer: ^Timer) -> bool {
     return false
 }
 
-point_in_circle :: proc(px, py, cx, cy, r: f32) -> bool {
-    dx := px - cx
-    dy := py - cy
-    return dx * dx + dy * dy <= r * r
+point_in_circle :: proc(
+    point: Vec2,
+    circle_origin: Vec2,
+    circle_r: f32,
+) -> bool {
+    dx := point.x - circle_origin.x
+    dy := point.y - circle_origin.y
+    return dx * dx + dy * dy <= circle_r * circle_r
 }
 
 // provides a collider rect that covers the full sprite

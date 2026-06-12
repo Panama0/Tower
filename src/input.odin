@@ -255,7 +255,6 @@ handle_sdl_events :: proc(window: ^sdl3.Window) {
         #partial switch ev.type {
         // system
         case .WINDOW_RESIZED:
-            log.debug("resize event, ", ev.window)
             handle_resize(window, {ev.window.data1, ev.window.data2})
 
         case .QUIT:

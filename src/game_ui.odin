@@ -7,7 +7,7 @@ import "vendor:sdl3"
 HOTBAR_SLOTS :: 10
 
 UIState :: struct {
-    renderer:     ^sdl3.Renderer,
+    renderer:     Renderer,
     w, h:         int,
     // add here
     hotbar_items: [HOTBAR_SLOTS]Item, // position on hotbar to item
@@ -17,7 +17,7 @@ UIState :: struct {
 @(private = "file")
 ui_state: UIState
 
-ui_init :: proc(renderer: ^sdl3.Renderer, w, h: int) {
+ui_init :: proc(renderer: Renderer, w, h: int) {
     ui_state.renderer = renderer
     ui_state.w = w
     ui_state.h = h
@@ -102,13 +102,14 @@ ui_draw_hud :: proc() {
                 pos.w + HOTBAR_SELECTED_WIDTH,
                 pos.h + HOTBAR_SELECTED_WIDTH,
             }
-            draw_rect(renderer, &pos_selected, 0, 0, 0)
+            render_draw_rect(renderer, &pos_selected, 0, 0, 0)
         }
 
         // draw regular empty slots
-        draw_rect(renderer, &pos, 150, 150, 150, 150)
+        render_draw_rect(renderer, &pos, 150, 150, 150, 150)
 
         // draw item
+        //TODO: change to render_draw_sprite
         item_at_slot := ui_state.hotbar_items[i]
         if item_at_slot != .none {
             sprite := state.sprites[item_data[item_at_slot].sprite]
@@ -120,12 +121,17 @@ ui_draw_hud :: proc() {
                 f32(sprite.width),
                 f32(sprite.height),
             }
-            sdl3.RenderTexture(renderer, state.atlas.texture, &src, &dest)
+            sdl3.RenderTexture(
+                renderer.sdl_renderer,
+                state.atlas.texture,
+                &src,
+                &dest,
+            )
         }
 
         // draw text on top left
         b: [4]byte
-        draw_text(
+        render_draw_text(
             renderer,
             .normal,
             strconv.write_int(b[:], i64(i + 1), 10),

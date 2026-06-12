@@ -19,6 +19,47 @@ Atlas :: struct {
     texture: ^sdl3.Texture,
 }
 
+Camera :: struct {
+    target:                  Vec2, // focus of camera
+    view_width, view_height: f32,
+}
+
+Renderer :: struct {
+    sdl_renderer: ^sdl3.Renderer,
+    cam:          Camera,
+}
+
+make_renderer :: proc(window: ^sdl3.Window, w, h: i32) -> Renderer {
+    renderer := sdl3.CreateRenderer(window, "")
+    if renderer == nil do log.panicf("Could not create renderer with errror: %v", sdl3.GetError())
+
+    // we can do stretching/letterbox via
+    sdl3.SetRenderLogicalPresentation(renderer, w, h, .INTEGER_SCALE)
+
+    // for opacity
+    sdl3.SetRenderDrawBlendMode(renderer, {.BLEND})
+
+    // fonts
+
+    if !ttf.Init() {
+        log.fatalf("ttf init failed with error: %v", sdl3.GetError())
+    }
+
+    // init "renderer"
+    load_sprites_and_atlas(renderer)
+    load_fonts()
+
+    return {sdl_renderer = renderer}
+}
+
+render_shutdown :: proc(renderer: Renderer) {
+    for font in state.fonts {
+        ttf.CloseFont(font)
+    }
+
+    sdl3.DestroyRenderer(renderer.sdl_renderer)
+}
+
 load_sprites_and_atlas :: proc(renderer: ^sdl3.Renderer) {
     img_dir := "res/sprites/"
     //FIX: need default asset when not found
@@ -138,23 +179,68 @@ load_fonts :: proc() {
             data.size_pt,
         )
 
-        ttf.SetFontHinting(font, .NORMAL)
-
         if font == nil {
             log.debugf(
                 "Failed to load font %v with error: %v",
                 path,
                 sdl3.GetError(),
             )
+            return
         }
+
+        ttf.SetFontHinting(font, .NORMAL)
 
         state.fonts[style] = font
     }
 }
 
+render_screen_to_world :: proc(renderer: Renderer, screen_pos: Vec2i) -> Vec2 {
+    world_x, world_y: f32
+    sdl3.RenderCoordinatesFromWindow(
+        renderer.sdl_renderer,
+        f32(screen_pos.x),
+        f32(screen_pos.y),
+        &world_x,
+        &world_y,
+    )
+    cam := renderer.cam
+    return {
+        world_x + cam.target.x - cam.view_width / 2,
+        world_y + cam.target.y - cam.view_height / 2,
+    }
+}
+
+render_world_to_screen_vec :: proc(renderer: Renderer, pos: Vec2) -> Vec2 {
+    cam := renderer.cam
+    return(
+        pos -
+        {
+                cam.target.x - cam.view_width / 2,
+                cam.target.y - cam.view_height / 2,
+            } \
+    )
+}
+
+render_world_to_screen_xy :: proc(
+    renderer: Renderer,
+    x, y: f32,
+) -> (
+    new_x, new_y: f32,
+) {
+    cam := renderer.cam
+    new_x = x - cam.target.x + cam.view_width / 2
+    new_y = y - cam.target.y + cam.view_height / 2
+    return
+}
+
+render_world_to_screen :: proc {
+    render_world_to_screen_vec,
+    render_world_to_screen_xy,
+}
+
 // draw text at native res
-draw_text :: proc(
-    renderer: ^sdl3.Renderer,
+render_draw_text :: proc(
+    renderer: Renderer,
     style: FontStyle,
     text: string,
     x, y: f32,
@@ -163,16 +249,30 @@ draw_text :: proc(
     // save the old logical presentation settings
     logical_w, logical_h: i32
     mode: sdl3.RendererLogicalPresentation
-    sdl3.GetRenderLogicalPresentation(renderer, &logical_w, &logical_h, &mode)
+    sdl3.GetRenderLogicalPresentation(
+        renderer.sdl_renderer,
+        &logical_w,
+        &logical_h,
+        &mode,
+    )
 
-    // save the coords in world space
+    // apply camera transform
+    cam_x, cam_y := render_world_to_screen(renderer, x, y)
+
+    // save the coords that we would have drawn at in the window
     win_x, win_y: f32
-    sdl3.RenderCoordinatesToWindow(renderer, x, y, &win_x, &win_y)
+    sdl3.RenderCoordinatesToWindow(
+        renderer.sdl_renderer,
+        cam_x,
+        cam_y,
+        &win_x,
+        &win_y,
+    )
 
     // clear out logical presentation and defer restoration
-    sdl3.SetRenderLogicalPresentation(renderer, 0, 0, .DISABLED)
+    sdl3.SetRenderLogicalPresentation(renderer.sdl_renderer, 0, 0, .DISABLED)
     defer sdl3.SetRenderLogicalPresentation(
-        renderer,
+        renderer.sdl_renderer,
         logical_w,
         logical_h,
         mode,
@@ -197,7 +297,7 @@ draw_text :: proc(
     }
     defer sdl3.DestroySurface(surface)
 
-    texture := sdl3.CreateTextureFromSurface(renderer, surface)
+    texture := sdl3.CreateTextureFromSurface(renderer.sdl_renderer, surface)
 
     if texture == nil {
         log.debugf("Failed to create texture with error: %v", sdl3.GetError())
@@ -205,6 +305,7 @@ draw_text :: proc(
     }
     defer sdl3.DestroyTexture(texture)
 
+    // remember that we are drawing it at the window x and y because we are now at native res
     dst := sdl3.FRect {
         x = win_x,
         y = win_y,
@@ -212,29 +313,82 @@ draw_text :: proc(
         h = f32(surface.h),
     }
 
-    sdl3.RenderTexture(renderer, texture, nil, &dst)
+
+    sdl3.RenderTexture(renderer.sdl_renderer, texture, nil, &dst)
 }
 
-// draw a rect and reset the colour after
-draw_rect :: proc(
-    renderer: ^sdl3.Renderer,
+
+render_draw_rect :: proc(
+    renderer: Renderer,
     rect: ^sdl3.FRect,
     r: sdl3.Uint8,
     g: sdl3.Uint8,
     b: sdl3.Uint8,
     a: sdl3.Uint8 = 255,
+    fill := true,
 ) {
+    new_x, new_y := render_world_to_screen(renderer, rect.x, rect.y)
+    new_rect := sdl3.FRect{new_x, new_y, rect.w, rect.h}
+
     old_r, old_g, old_b, old_a: sdl3.Uint8
-    sdl3.GetRenderDrawColor(renderer, &old_r, &old_g, &old_b, &old_a)
-    sdl3.SetRenderDrawColor(renderer, r, g, b, a)
-    sdl3.RenderFillRect(renderer, rect)
-    sdl3.SetRenderDrawColor(renderer, r, g, b, a)
+    sdl3.GetRenderDrawColor(
+        renderer.sdl_renderer,
+        &old_r,
+        &old_g,
+        &old_b,
+        &old_a,
+    )
+    sdl3.SetRenderDrawColor(renderer.sdl_renderer, r, g, b, a)
+
+    if fill do sdl3.RenderFillRect(renderer.sdl_renderer, &new_rect)
+    else do sdl3.RenderRect(renderer.sdl_renderer, &new_rect)
+
+    sdl3.SetRenderDrawColor(renderer.sdl_renderer, old_r, old_g, old_b, old_a)
+}
+
+render_draw_sprite :: proc(
+    renderer: Renderer,
+    spr: Sprite,
+    pos: Vec2,
+    pivot: Pivot = .centre,
+    rotation_deg := 0.0,
+    flip := sdl3.FlipMode{},
+    frame_count := 0,
+    current_frame := 0,
+) {
+    src := spr.uv
+    dest := sdl3.FRect{**pos, f32(spr.width), f32(spr.height)}
+
+    if frame_count > 1 {
+        frame_offset := int(spr.width) / frame_count
+        src.w = f32(frame_offset)
+        src.x += f32(frame_offset * current_frame)
+        dest.w = f32(frame_offset)
+    }
+
+    pivot_offset := pivot_to_vec(pivot)
+    pivot_point := sdl3.FPoint{src.w * pivot_offset.x, src.h * pivot_offset.y}
+
+    dest.x -= dest.w * pivot_offset.x
+    dest.y -= dest.h * pivot_offset.y
+
+    dest.x, dest.y = render_world_to_screen(renderer, dest.x, dest.y)
+
+    sdl3.RenderTextureRotated(
+        renderer.sdl_renderer,
+        state.atlas.texture,
+        &src,
+        &dest,
+        rotation_deg,
+        &pivot_point,
+        flip,
+    )
 }
 
 // draw a circle and reset colour after
 // no idea how this works
-draw_circle :: proc(
-    renderer: ^sdl3.Renderer,
+render_draw_circle :: proc(
+    renderer: Renderer,
     radius: f32,
     cx, cy: f32,
     r: sdl3.Uint8,
@@ -242,14 +396,28 @@ draw_circle :: proc(
     b: sdl3.Uint8,
     a: sdl3.Uint8 = 255,
 ) {
+    new_x, new_y := render_world_to_screen(renderer, cx, cy)
+
     old_r, old_g, old_b, old_a: sdl3.Uint8
-    sdl3.GetRenderDrawColor(renderer, &old_r, &old_g, &old_b, &old_a)
-    sdl3.SetRenderDrawColor(renderer, r, g, b, a)
+    sdl3.GetRenderDrawColor(
+        renderer.sdl_renderer,
+        &old_r,
+        &old_g,
+        &old_b,
+        &old_a,
+    )
+    sdl3.SetRenderDrawColor(renderer.sdl_renderer, r, g, b, a)
 
     for dy: f32 = -radius; dy <= radius; dy += 1 {
         dx := math.sqrt(radius * radius - dy * dy)
-        sdl3.RenderLine(renderer, cx - dx, cy + dy, cx + dx, cy + dy)
+        sdl3.RenderLine(
+            renderer.sdl_renderer,
+            new_x - dx,
+            new_y + dy,
+            new_x + dx,
+            new_y + dy,
+        )
     }
 
-    sdl3.SetRenderDrawColor(renderer, r, g, b, a)
+    sdl3.SetRenderDrawColor(renderer.sdl_renderer, old_r, old_g, old_b, old_a)
 }

@@ -20,6 +20,5 @@ Use `just` (the task runner) — all commands are in the `Justfile`:
 ## Code Style
 
 - Always ensure valid Odin syntax before writing code.
-- Run `odin fmt src/ test/` before committing.
 - No trailing comments on code.
 - Use the existing patterns in `src/` for new systems/components.
