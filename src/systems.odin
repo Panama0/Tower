@@ -8,6 +8,8 @@ import "core:math/linalg"
 import "core:math/rand"
 
 import "ecs"
+import r "render"
+
 import "vendor:sdl3"
 
 
@@ -463,7 +465,7 @@ update_game_camera :: proc(bounds: sdl3.FRect) {
 // --- Drawing ---
 
 //TODO: maybe we can remove the width when we create app subsystem
-draw_player_health :: proc(renderer: Renderer, width, height: int) {
+draw_player_health :: proc(renderer: r.Renderer, width, height: int) {
     w := state.gs.world
     hp := ecs.get_component(w, state.gs.player, C_Health)
 
@@ -480,11 +482,11 @@ draw_player_health :: proc(renderer: Renderer, width, height: int) {
         BAR_HEIGHT,
     }
 
-    render_draw_rect(renderer, &rect, 255, 0, 0)
+    r.render_draw_rect(renderer, &rect, 255, 0, 0)
 }
 
 // for debug if needed
-draw_colliders :: proc(renderer: Renderer) {
+draw_colliders :: proc(renderer: r.Renderer) {
     w := state.gs.world
 
     colliders := ecs.get_entities_with(w, C_AABBCollider)
@@ -495,11 +497,11 @@ draw_colliders :: proc(renderer: Renderer) {
 
         aabb_world := aabb_to_world(aabb.rect, transform.pos)
 
-        render_draw_rect(renderer, &aabb_world, 0, 150, 150, 100)
+        r.render_draw_rect(renderer, &aabb_world, 0, 150, 150, 100)
     }
 }
 
-draw_waypoints :: proc(renderer: Renderer) {
+draw_waypoints :: proc(renderer: r.Renderer) {
     w := state.gs.world
     followers := ecs.get_entities_with(w, C_PathFollower)
 
@@ -509,7 +511,7 @@ draw_waypoints :: proc(renderer: Renderer) {
 
         for waypoint in waypoints.waypoints {
             DOT_SIZE :: 2
-            render_draw_rect(
+            r.render_draw_rect(
                 renderer,
                 &{
                     waypoint.x - DOT_SIZE / 2,
@@ -525,7 +527,7 @@ draw_waypoints :: proc(renderer: Renderer) {
     }
 }
 
-draw_origins :: proc(renderer: Renderer) {
+draw_origins :: proc(renderer: r.Renderer) {
     w := state.gs.world
     entities := ecs.get_entities_with(w, C_Transform)
 
@@ -534,7 +536,7 @@ draw_origins :: proc(renderer: Renderer) {
         transform := ecs.get_component(w, e, C_Transform)
 
         DOT_SIZE :: 2
-        render_draw_rect(
+        r.render_draw_rect(
             renderer,
             &{
                 transform.pos.x - DOT_SIZE / 2,
@@ -549,14 +551,15 @@ draw_origins :: proc(renderer: Renderer) {
     }
 }
 
-draw_sprites :: proc(renderer: Renderer) {
+draw_sprites :: proc(renderer: r.Renderer) {
     w := state.gs.world
 
     entities := ecs.get_entities_with(w, C_Sprite)
     for e in entities {
         spr_component := ecs.get_component(w, e, C_Sprite)
         transform := ecs.get_component(w, e, C_Transform)
-        spr := state.sprites[spr_component.name]
+
+        spriteID := sprite_ids[spr_component.name]
 
         frame_count := 0
         current_frame := 0
@@ -566,9 +569,10 @@ draw_sprites :: proc(renderer: Renderer) {
             current_frame = anim.anim_index
         }
 
-        render_draw_sprite(
+
+        r.render_draw_sprite(
             renderer,
-            spr,
+            spriteID,
             transform.pos,
             spr_component.draw_pivot,
             spr_component.rotation_deg,
@@ -579,12 +583,12 @@ draw_sprites :: proc(renderer: Renderer) {
     }
 }
 
-draw_range :: proc(renderer: Renderer) {
+draw_range :: proc(renderer: r.Renderer) {
     range := item_data[state.gs.selected_item].place_radius
     if range == 0 do return
 
     origin := &ecs.get_component(state.gs.world, state.gs.player, C_Transform).pos
 
-    render_draw_circle(renderer, range, origin.x, origin.y, 0, 0, 0, 100)
+    r.render_draw_circle(renderer, range, origin.x, origin.y, 0, 0, 0, 100)
 
 }

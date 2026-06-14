@@ -3,6 +3,8 @@ package main
 import "core:log"
 import "vendor:sdl3"
 
+import r "render"
+
 // #todo, remove this and make everything operate via params passed down
 // that way we can have helpers elsewhere that use the game's context for this
 
@@ -249,13 +251,15 @@ reset_input_state :: proc(input: ^InputState) {
     state.input.scroll_y = 0
 }
 
-handle_sdl_events :: proc(window: ^sdl3.Window) {
+handle_sdl_events :: proc(window: ^sdl3.Window, renderer: ^r.Renderer) {
     ev: sdl3.Event
     for sdl3.PollEvent(&ev) {
         #partial switch ev.type {
         // system
         case .WINDOW_RESIZED:
-            handle_resize(window, {ev.window.data1, ev.window.data2})
+            new_size := Vec2i{ev.window.data1, ev.window.data2}
+            r.render_handle_resize(renderer, new_size, state.old_win_size)
+            state.old_win_size = new_size
 
         case .QUIT:
             state.running = false

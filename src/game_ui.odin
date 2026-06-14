@@ -4,10 +4,11 @@ import "core:log"
 import "core:strconv"
 import "vendor:sdl3"
 
+import r "render"
+
 HOTBAR_SLOTS :: 10
 
 UIState :: struct {
-    renderer:     Renderer,
     w, h:         int,
     // add here
     hotbar_items: [HOTBAR_SLOTS]Item, // position on hotbar to item
@@ -17,11 +18,9 @@ UIState :: struct {
 @(private = "file")
 ui_state: UIState
 
-ui_init :: proc(renderer: Renderer, w, h: int) {
-    ui_state.renderer = renderer
+ui_init :: proc(w, h: int) {
     ui_state.w = w
     ui_state.h = h
-
 }
 
 
@@ -69,13 +68,11 @@ ui_set_hotbar_items :: proc(items: [HOTBAR_SLOTS]Item) {
     state.gs.selected_item = ui_state.hotbar_items[ui_state.hotbar_index]
 }
 
-ui_draw_hud :: proc() {
+ui_draw_hud :: proc(renderer: r.Renderer) {
     HOTBAR_SLOT_SIZE :: 32
     HOTBAR_GAP :: 50
     HOTBAR_OFFSET_Y :: 10
     HOTBAR_SELECTED_WIDTH :: 10
-
-    renderer := ui_state.renderer
 
     // calculate hotbar offset to make centered
     hotbar_width := HOTBAR_GAP * HOTBAR_SLOTS
@@ -102,38 +99,30 @@ ui_draw_hud :: proc() {
                 pos.w + HOTBAR_SELECTED_WIDTH,
                 pos.h + HOTBAR_SELECTED_WIDTH,
             }
-            render_draw_rect(renderer, &pos_selected, 0, 0, 0)
+            r.render_draw_rect(renderer, &pos_selected, 0, 0, 0)
         }
 
         // draw regular empty slots
-        render_draw_rect(renderer, &pos, 150, 150, 150, 150)
+        r.render_draw_rect(renderer, &pos, 150, 150, 150, 150)
 
         // draw item
-        //TODO: change to render_draw_sprite
         item_at_slot := ui_state.hotbar_items[i]
         if item_at_slot != .none {
-            sprite := state.sprites[item_data[item_at_slot].sprite]
+            spr := item_data[item_at_slot].sprite
 
-            src := sprite.uv
-            dest := sdl3.FRect {
-                pos.x,
-                pos.y,
-                f32(sprite.width),
-                f32(sprite.height),
-            }
-            sdl3.RenderTexture(
-                renderer.sdl_renderer,
-                state.atlas.texture,
-                &src,
-                &dest,
+            r.render_draw_sprite(
+                renderer,
+                sprite_ids[spr],
+                {pos.x, pos.y},
+                .top_left,
             )
         }
 
         // draw text on top left
         b: [4]byte
-        render_draw_text(
+        r.render_draw_text(
             renderer,
-            .normal,
+            fontIDs[.normal],
             strconv.write_int(b[:], i64(i + 1), 10),
             pos.x,
             pos.y,

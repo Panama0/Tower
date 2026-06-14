@@ -2,51 +2,38 @@ package main
 
 import "vendor:sdl3"
 
-Pivot :: enum {
-    centre,
-    top_left,
-    top_right,
-    bottom_left,
-    bottom_right,
+
+Direction :: enum {
+    north,
+    north_east,
+    east,
+    south_east,
+    south,
+    south_west,
+    west,
+    north_west,
 }
 
-DIRECTIONS :: [?]Vec2 {
-    {0, -1}, // North
-    {1, -1}, // North-East
-    {1, 0}, // East
-    {1, 1}, // South-East
-    {0, 1}, // South
-    {-1, 1}, // South-West
-    {-1, 0}, // West
-    {-1, -1}, // North-West
+direction_vectors: [Direction]Vec2 = {
+    .north      = {0, -1},
+    .north_east = {1, -1},
+    .east       = {1, 0},
+    .south_east = {1, 1},
+    .south      = {0, 1},
+    .south_west = {-1, 1},
+    .west       = {-1, 0},
+    .north_west = {-1, -1},
 }
 
-DIRECTIONS_INT :: [?]Vec2i {
-    {0, -1},
-    {1, -1},
-    {1, 0},
-    {1, 1},
-    {0, 1},
-    {-1, 1},
-    {-1, 0},
-    {-1, -1},
-}
-
-pivot_to_vec :: proc(p: Pivot) -> Vec2 {
-    switch p {
-    case .centre:
-        return {0.5, 0.5}
-    case .top_left:
-        return {0.0, 0.0}
-    case .top_right:
-        return {1.0, 0.0}
-    case .bottom_left:
-        return {0.0, 1.0}
-    case .bottom_right:
-        return {1.0, 1.0}
-    }
-
-    return {-1, -1}
+direction_vectors_int: [Direction]Vec2i = {
+    .north      = {0, -1},
+    .north_east = {1, -1},
+    .east       = {1, 0},
+    .south_east = {1, 1},
+    .south      = {0, 1},
+    .south_west = {-1, 1},
+    .west       = {-1, 0},
+    .north_west = {-1, -1},
 }
 
 aabb_to_world :: proc(aabb: sdl3.FRect, point: Vec2) -> sdl3.FRect {

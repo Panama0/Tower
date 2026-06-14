@@ -1,3 +1,9 @@
 # Next things
-- move things in main into renderer, remove some state like fonts and sprite atlas
-- encapsulate render into its own package??
+- spawning system (waves)
+- gold earning and drops from enemies
+- shop ui
+- increase resolution of dt
+
+
+# Future
+- See if we can just not add certain nodes to the pf graph instead of marking them as non passable

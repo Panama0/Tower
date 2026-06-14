@@ -3,6 +3,7 @@ package main
 import "vendor:sdl3"
 
 import "ecs"
+import r "render"
 
 FlipMode :: enum {
     nil,
@@ -17,7 +18,7 @@ Timer :: struct {
 
 C_Sprite :: struct {
     name:         SpriteName,
-    draw_pivot:   Pivot,
+    draw_pivot:   r.Pivot,
     rotation_deg: f64,
     flip_mode:    FlipMode, // how or if to flip the sprite when drawing based on velocity
     flip_state:   sdl3.FlipMode,

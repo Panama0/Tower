@@ -6,6 +6,7 @@ import "core:math/linalg"
 import "core:slice"
 
 import "ecs"
+import r "render"
 
 import "vendor:sdl3"
 
@@ -39,7 +40,7 @@ PathfindingGraph :: struct {
 }
 
 // debug draw the graph
-pathfinding_draw_graph :: proc(renderer: Renderer, graph: PathfindingGraph) {
+pathfinding_draw_graph :: proc(renderer: r.Renderer, graph: PathfindingGraph) {
     impassable_color: [4]f32 = {255, 0, 0, 150} // red
     passable_color: [4]f32 = {0, 255, 0, 150} // green
 
@@ -58,7 +59,7 @@ pathfinding_draw_graph :: proc(renderer: Renderer, graph: PathfindingGraph) {
         }
 
         // draw the nodes
-        render_draw_rect(renderer, &cell_rect, 0, 0, 0, 100, false)
+        r.render_draw_rect(renderer, &cell_rect, 0, 0, 0, 100, false)
 
         // unweighted nodes can be ignored
         if node.weight != 0 {
@@ -79,7 +80,7 @@ pathfinding_draw_graph :: proc(renderer: Renderer, graph: PathfindingGraph) {
             // truncate to uint
             sdl_colour := cast([4]sdl3.Uint8)lerped
 
-            render_draw_rect(
+            r.render_draw_rect(
                 renderer,
                 &cell_rect,
                 sdl_colour.r,
@@ -291,7 +292,7 @@ find_path :: proc(
         closed_set[current_node.pos] = {}
 
         // check all directions around current node
-        for d in DIRECTIONS_INT {
+        for d in direction_vectors_int {
             next_pos := current_node.pos + d
             next_node := get_node(local_graph, next_pos)
 

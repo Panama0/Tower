@@ -3,13 +3,12 @@ package main
 
 import "core:fmt"
 import "core:log"
-import "core:math"
 import "core:mem"
 
 import "ecs"
+import r "render"
 
 import "vendor:sdl3"
-import ttf "vendor:sdl3/ttf"
 
 Vec2 :: [2]f32
 Vec2i :: [2]i32
@@ -29,6 +28,8 @@ SpriteName :: enum {
     fence,
 }
 
+sprite_ids: [SpriteName]r.AssetID
+
 sprite_data: [SpriteName]Sprite_Data = #partial {
     .animtest = {frame_count = 3, frame_interval_ms = 150, repeat = true},
     .knight_idle = {frame_count = 7, frame_interval_ms = 100, repeat = true},
@@ -36,6 +37,7 @@ sprite_data: [SpriteName]Sprite_Data = #partial {
 }
 
 Sprite_Data :: struct {
+    file_name:         string,
     frame_count:       int,
     frame_interval_ms: u64,
     repeat:            bool,
@@ -43,11 +45,32 @@ Sprite_Data :: struct {
     // pivot:       utils.Pivot,
 }
 
-//os file name
-FontName :: enum {
-    Minecraft,
-    LiberationSans,
-    NotoSans,
+load_assets :: proc(renderer: ^r.Renderer) {
+    // sprites
+    for sprite, name in sprite_data {
+        if name == .nil do continue
+
+        // infer file name if not specified
+        file_name := sprite.file_name
+        if file_name == "" {
+            file_name = fmt.tprint(name)
+        }
+
+        spriteID := r.render_add_sprite(renderer, file_name)
+
+        sprite_ids[name] = spriteID
+    }
+
+    // fonts
+    for data, name in font_data {
+        fontID, ok := r.render_load_font(renderer, data.family, data.size_pt)
+        if !ok {
+            log.debug("Could not load font: %v", name)
+            continue
+        }
+        fontIDs[name] = fontID
+    }
+
 }
 
 // internal name
@@ -60,12 +83,14 @@ FontStyle :: enum {
 }
 
 font_data: [FontStyle]FontData = {
-    .normal = {.Minecraft, 16},
-    .debug  = {.NotoSans, 6},
+    .normal = {"Minecraft", 16},
+    .debug  = {"NotoSans", 6},
 }
 
+fontIDs: [FontStyle]r.AssetID
+
 FontData :: struct {
-    family:  FontName,
+    family:  string,
     size_pt: f32,
     // if we want bold/ita in the future
     //style: string
@@ -101,12 +126,9 @@ State :: struct {
     running:          bool,
     input:            InputState,
     occurred_actions: [Action]bool,
-    // render stuff
-    atlas:            Atlas,
-    sprites:          [SpriteName]Sprite,
-    fonts:            [FontStyle]^ttf.Font,
     // window stuff
     fullscreen:       bool,
+    old_win_size:     Vec2i,
 }
 
 GameState :: struct {
@@ -118,8 +140,8 @@ GameState :: struct {
     items:            [Item]int,
     selected_item:    Item,
     place_grid:       Grid,
-    game_camera:      Camera,
-    ui_camera:        Camera,
+    game_camera:      r.Camera,
+    ui_camera:        r.Camera,
 }
 
 state: State
@@ -223,12 +245,13 @@ spawn_wall :: proc(pos: Vec2) -> ecs.Entity {
     coll := ecs.add_component(w, e, C_AABBCollider)
     coll.physical = true
     coll.static = true
-    spr_w := f32(state.sprites[spr.name].width)
-    coll.rect = default_collider(spr_w, spr_w)
+    //TODO: fix this
+    // spr_w := f32(renderer.sprites[spr.name].width)
+    coll.rect = default_collider(16, 16)
 
     tags := ecs.add_component(w, e, C_PathfindingTags)
     tags.tags += {.impassible}
-    tags.bounds = default_collider(spr_w, spr_w)
+    tags.bounds = default_collider(16, 16)
 
     return e
 }
@@ -342,24 +365,6 @@ resize_window :: proc(window: ^sdl3.Window, new_size: Vec2i) {
     log.debug("resizing to ", new_size)
 }
 
-handle_resize :: proc(window: ^sdl3.Window, new_size: Vec2i) {
-    // win_w_before: i32
-    // win_h_before: i32
-    // sdl3.GetWindowSize(window, &win_w_before, &win_h_before)
-
-
-    // scale text
-    rect: sdl3.FRect
-    sdl3.GetRenderLogicalPresentationRect(sdl3.GetRenderer(window), &rect)
-
-    //TODO: hardcoded
-    scale := rect.w / 640
-
-    for font, style in state.fonts {
-        ttf.SetFontSize(font, font_data[style].size_pt * scale)
-    }
-}
-
 main :: proc() {
     context.logger = log.create_console_logger()
     defer log.destroy_console_logger(context.logger)
@@ -399,8 +404,11 @@ main :: proc() {
 
     window := sdl3.CreateWindow("game", 640, 360, {})
     if window == nil do log.panicf("Could not open window with error: %v", sdl3.GetError())
+    state.old_win_size = {640, 360}
 
-    renderer := make_renderer(window, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+    renderer: r.Renderer
+    r.renderer_init(&renderer, window, {LOGICAL_WIDTH, LOGICAL_HEIGHT})
+    load_assets(&renderer)
 
     state.gs.game_camera = {
         {LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2},
@@ -417,7 +425,7 @@ main :: proc() {
     register_components(state.gs.world)
     state.gs.player = spawn_player()
 
-    ui_init(renderer, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+    ui_init(LOGICAL_WIDTH, LOGICAL_HEIGHT)
 
     state.gs.place_grid = make_grid({LOGICAL_WIDTH, LOGICAL_HEIGHT}, GRID_SIZE)
 
@@ -465,7 +473,7 @@ main :: proc() {
 
         state.dt = f32(current_tick - last_tick) / 1000
 
-        handle_sdl_events(window)
+        handle_sdl_events(window, &renderer)
 
         // ui must be first as it consumes keys
         ui_update()
@@ -497,7 +505,7 @@ main :: proc() {
         if action_occurred(.place_item) {
             renderer.cam = state.gs.game_camera
 
-            world_pos := render_screen_to_world(
+            world_pos := r.render_screen_to_world(
                 renderer,
                 {i32(state.input.mouse_x), i32(state.input.mouse_y)},
             )
@@ -573,8 +581,7 @@ main :: proc() {
         cullOOB(world_bounds)
 
         // draw game
-        sdl3.SetRenderDrawColor(renderer.sdl_renderer, 245, 235, 220, 255)
-        sdl3.RenderClear(renderer.sdl_renderer)
+        r.render_new_frame(&renderer)
 
         renderer.cam = state.gs.game_camera
         draw_sprites(renderer)
@@ -590,18 +597,18 @@ main :: proc() {
         draw_origins(renderer)
 
         // world bounds
-        render_draw_rect(renderer, &world_bounds, 0, 255, 0, 255, false)
+        r.render_draw_rect(renderer, &world_bounds, 0, 255, 0, 255, false)
 
         // draw ui
 
         renderer.cam = state.gs.ui_camera
-        ui_draw_hud()
+        ui_draw_hud(renderer)
         draw_player_health(renderer, 640, 360)
 
         fps_string := fmt.tprintf("%.2f", 1 / state.dt)
-        render_draw_text(renderer, .debug, fps_string, 10, 10)
+        r.render_draw_text(renderer, fontIDs[.debug], fps_string, 10, 10)
 
-        sdl3.RenderPresent(renderer.sdl_renderer)
+        r.render_end_frame(&renderer)
 
         state.gs.ticks += 1
 
@@ -610,8 +617,6 @@ main :: proc() {
         state.occurred_actions = {}
         free_all(context.temp_allocator)
     }
-
-    ecs.remove_component(state.gs.world, state.gs.player, C_Transform)
 
     // clean all entity memory by killing all
     entities: [dynamic]ecs.Entity
@@ -624,9 +629,7 @@ main :: proc() {
 
     delete(state.gs.entity_free_list)
 
-    sdl3.DestroyTexture(state.atlas.texture)
-
-    render_shutdown(renderer)
+    r.render_shutdown(&renderer)
 
     sdl3.DestroyWindow(window)
     sdl3.Quit()
