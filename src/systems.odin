@@ -468,7 +468,7 @@ draw_player_health :: proc(renderer: r.Renderer, width, height: int) {
         BAR_HEIGHT,
     }
 
-    r.render_draw_rect(renderer, &rect, 255, 0, 0)
+    r.draw_rect(renderer, &rect, 255, 0, 0)
 }
 
 // for debug if needed
@@ -483,7 +483,7 @@ draw_colliders :: proc(renderer: r.Renderer) {
 
         aabb_world := aabb_to_world(aabb.rect, transform.pos)
 
-        r.render_draw_rect(renderer, &aabb_world, 0, 150, 150, 100)
+        r.draw_rect(renderer, &aabb_world, 0, 150, 150, 100)
     }
 }
 
@@ -497,7 +497,7 @@ draw_waypoints :: proc(renderer: r.Renderer) {
 
         for waypoint in waypoints.waypoints {
             DOT_SIZE :: 2
-            r.render_draw_rect(
+            r.draw_rect(
                 renderer,
                 &{
                     waypoint.x - DOT_SIZE / 2,
@@ -522,7 +522,7 @@ draw_origins :: proc(renderer: r.Renderer) {
         transform := ecs.get_component(w, e, C_Transform)
 
         DOT_SIZE :: 2
-        r.render_draw_rect(
+        r.draw_rect(
             renderer,
             &{
                 transform.pos.x - DOT_SIZE / 2,
@@ -556,7 +556,7 @@ draw_sprites :: proc(renderer: r.Renderer) {
         }
 
 
-        r.render_draw_sprite(
+        r.draw_sprite(
             renderer,
             spriteID,
             transform.pos,
@@ -575,6 +575,6 @@ draw_range :: proc(renderer: r.Renderer) {
 
     origin := &ecs.get_component(state.gs.world, state.gs.player, C_Transform).pos
 
-    r.render_draw_circle(renderer, range, origin.x, origin.y, 0, 0, 0, 100)
+    r.draw_circle(renderer, range, origin.x, origin.y, 0, 0, 0, 100)
 
 }

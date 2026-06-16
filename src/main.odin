@@ -56,14 +56,14 @@ load_assets :: proc(renderer: ^r.Renderer) {
             file_name = fmt.tprint(name)
         }
 
-        spriteID := r.render_add_sprite(renderer, file_name)
+        spriteID := r.add_sprite(renderer, file_name)
 
         sprite_ids[name] = spriteID
     }
 
     // fonts
     for data, name in font_data {
-        fontID, ok := r.render_load_font(renderer, data.family, data.size_pt)
+        fontID, ok := r.load_font(renderer, data.family, data.size_pt)
         if !ok {
             log.debug("Could not load font: %v", name)
             continue
@@ -510,7 +510,7 @@ main :: proc() {
         if action_occurred(.place_item) {
             renderer.cam = state.gs.game_camera
 
-            world_pos := r.render_screen_to_world(
+            world_pos := r.screen_to_world(
                 renderer,
                 {i32(state.input.mouse_x), i32(state.input.mouse_y)},
             )
@@ -588,7 +588,7 @@ main :: proc() {
         cullOOB(world_bounds)
 
         // draw game
-        r.render_new_frame(&renderer)
+        r.renderer_new_frame(&renderer)
 
         renderer.cam = state.gs.game_camera
         draw_sprites(renderer)
@@ -604,7 +604,7 @@ main :: proc() {
         // draw_origins(renderer)
         draw_spawner_remaining(renderer)
 
-        r.render_draw_rect(renderer, &world_bounds, 0, 255, 0, 255, false)
+        r.draw_rect(renderer, &world_bounds, 0, 255, 0, 255, false)
 
         // draw ui
 
@@ -613,9 +613,9 @@ main :: proc() {
         draw_player_health(renderer, 640, 360)
 
         fps_string := fmt.tprintf("%.2f", 1 / state.dt)
-        r.render_draw_text(renderer, fontIDs[.debug], fps_string, 10, 10)
+        r.draw_text(renderer, fontIDs[.debug], fps_string, 10, 10)
 
-        r.render_end_frame(&renderer)
+        r.renderer_end_frame(&renderer)
 
         // when we implement pause, just dont increment
         state.gs.running_seconds += state.dt
@@ -637,7 +637,7 @@ main :: proc() {
 
     delete(state.gs.entity_free_list)
 
-    r.render_shutdown(&renderer)
+    r.renderer_shutdown(&renderer)
 
     sdl3.DestroyWindow(window)
     sdl3.Quit()

@@ -66,7 +66,7 @@ Renderer :: struct {
 
 //TODO: Error handling
 @(private = "file")
-render_get_next_id :: proc(renderer: ^Renderer) -> (id: AssetID) {
+next_id :: proc(renderer: ^Renderer) -> (id: AssetID) {
     if queue.len(renderer.freeIDs) > 0 {
         id = queue.pop_front(&renderer.freeIDs)
     } else {
@@ -110,7 +110,7 @@ renderer_init :: proc(
     queue.init(&renderer.freeIDs, allocator = allocator)
 }
 
-render_shutdown :: proc(renderer: ^Renderer) {
+renderer_shutdown :: proc(renderer: ^Renderer) {
     for id, font in renderer.fonts {
         ttf.CloseFont(font)
     }
@@ -122,22 +122,22 @@ render_shutdown :: proc(renderer: ^Renderer) {
     vmem.arena_destroy(&renderer.arena)
 }
 
-render_new_frame :: proc(renderer: ^Renderer) {
+renderer_new_frame :: proc(renderer: ^Renderer) {
     // clear screen
     sdl3.SetRenderDrawColor(renderer.sdl_renderer, 245, 235, 220, 255)
     sdl3.RenderClear(renderer.sdl_renderer)
     // regenerate the atlas if dirty
     if renderer.atlas.dirty {
-        render_generate_atlas(renderer)
+        generate_atlas(renderer)
     }
 }
 
-render_end_frame :: proc(renderer: ^Renderer) {
+renderer_end_frame :: proc(renderer: ^Renderer) {
     sdl3.RenderPresent(renderer.sdl_renderer)
 }
 
-render_add_sprite :: proc(renderer: ^Renderer, file_name: string) -> AssetID {
-    id := render_get_next_id(renderer)
+add_sprite :: proc(renderer: ^Renderer, file_name: string) -> AssetID {
+    id := next_id(renderer)
 
     renderer.sprites[id] = {
         file_name = file_name,
@@ -149,7 +149,7 @@ render_add_sprite :: proc(renderer: ^Renderer, file_name: string) -> AssetID {
     return id
 }
 
-render_remove_sprite :: proc(renderer: ^Renderer, spriteID: AssetID) {
+remove_sprite :: proc(renderer: ^Renderer, spriteID: AssetID) {
     delete_key(&renderer.sprites, spriteID)
     queue.push(&renderer.freeIDs, spriteID)
     // mark atlas dirty
@@ -158,7 +158,7 @@ render_remove_sprite :: proc(renderer: ^Renderer, spriteID: AssetID) {
 
 // called automatically when needed
 @(private = "file")
-render_generate_atlas :: proc(renderer: ^Renderer) {
+generate_atlas :: proc(renderer: ^Renderer) {
     img_dir := "res/sprites/"
     //FIX: need default asset when not found
 
@@ -270,7 +270,7 @@ render_generate_atlas :: proc(renderer: ^Renderer) {
 }
 
 
-render_load_font :: proc(
+load_font :: proc(
     renderer: ^Renderer,
     file_name: string,
     size: f32,
@@ -279,7 +279,7 @@ render_load_font :: proc(
     ok: bool,
 ) {
     FONT_DIR :: "res/fonts/"
-    id = render_get_next_id(renderer)
+    id = next_id(renderer)
 
     path := fmt.tprint(FONT_DIR, file_name, ".ttf", sep = "")
 
@@ -303,10 +303,23 @@ render_load_font :: proc(
     return id, true
 }
 
+handle_resize :: proc(renderer: ^Renderer, new_size: Vec2i, old_size: Vec2i) {
+    // scale text
+    rect: sdl3.FRect
+    sdl3.GetRenderLogicalPresentationRect(renderer.sdl_renderer, &rect)
+
+    scale := rect.w / f32(old_size.x)
+
+    for id, font in renderer.fonts {
+        old_font_size := ttf.GetFontSize(font)
+        ttf.SetFontSize(font, old_font_size * scale)
+    }
+}
+
 // utils
 
 //TODO: error checking?
-render_sprite_dimensions :: proc(
+sprite_dimensions :: proc(
     renderer: ^Renderer,
     spriteID: AssetID,
     frame_count: i32,
@@ -316,7 +329,7 @@ render_sprite_dimensions :: proc(
     return {width, spr.height}
 }
 
-render_screen_to_world :: proc(renderer: Renderer, screen_pos: Vec2i) -> Vec2 {
+screen_to_world :: proc(renderer: Renderer, screen_pos: Vec2i) -> Vec2 {
     world_x, world_y: f32
     sdl3.RenderCoordinatesFromWindow(
         renderer.sdl_renderer,
@@ -332,7 +345,7 @@ render_screen_to_world :: proc(renderer: Renderer, screen_pos: Vec2i) -> Vec2 {
     }
 }
 
-render_world_to_screen_vec :: proc(renderer: Renderer, pos: Vec2) -> Vec2 {
+world_to_screen_vec :: proc(renderer: Renderer, pos: Vec2) -> Vec2 {
     cam := renderer.cam
     return(
         pos -
@@ -343,7 +356,7 @@ render_world_to_screen_vec :: proc(renderer: Renderer, pos: Vec2) -> Vec2 {
     )
 }
 
-render_world_to_screen_xy :: proc(
+world_to_screen_xy :: proc(
     renderer: Renderer,
     x, y: f32,
 ) -> (
@@ -355,7 +368,7 @@ render_world_to_screen_xy :: proc(
     return
 }
 
-render_world_to_screen :: proc {
-    render_world_to_screen_vec,
-    render_world_to_screen_xy,
+world_to_screen :: proc {
+    world_to_screen_vec,
+    world_to_screen_xy,
 }

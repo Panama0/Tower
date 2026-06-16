@@ -9,7 +9,7 @@ import ttf "vendor:sdl3/ttf"
 
 
 // draw text at native res
-render_draw_text :: proc(
+draw_text :: proc(
     renderer: Renderer,
     fontID: AssetID,
     text: string,
@@ -28,7 +28,7 @@ render_draw_text :: proc(
     )
 
     // apply camera transform
-    cam_x, cam_y := render_world_to_screen(renderer, x, y)
+    cam_x, cam_y := world_to_screen(renderer, x, y)
 
     // save the coords that we would have drawn at in the window
     win_x, win_y: f32
@@ -87,7 +87,7 @@ render_draw_text :: proc(
 }
 
 
-render_draw_rect :: proc(
+draw_rect :: proc(
     renderer: Renderer,
     rect: ^sdl3.FRect,
     r: sdl3.Uint8,
@@ -96,7 +96,7 @@ render_draw_rect :: proc(
     a: sdl3.Uint8 = 255,
     fill := true,
 ) {
-    new_x, new_y := render_world_to_screen(renderer, rect.x, rect.y)
+    new_x, new_y := world_to_screen(renderer, rect.x, rect.y)
     new_rect := sdl3.FRect{new_x, new_y, rect.w, rect.h}
 
     old_r, old_g, old_b, old_a: sdl3.Uint8
@@ -115,7 +115,7 @@ render_draw_rect :: proc(
     sdl3.SetRenderDrawColor(renderer.sdl_renderer, old_r, old_g, old_b, old_a)
 }
 
-render_draw_sprite :: proc(
+draw_sprite :: proc(
     renderer: Renderer,
     spriteID: AssetID,
     pos: Vec2,
@@ -143,7 +143,7 @@ render_draw_sprite :: proc(
     dest.x -= dest.w * pivot_offset.x
     dest.y -= dest.h * pivot_offset.y
 
-    dest.x, dest.y = render_world_to_screen(renderer, dest.x, dest.y)
+    dest.x, dest.y = world_to_screen(renderer, dest.x, dest.y)
 
     sdl3.RenderTextureRotated(
         renderer.sdl_renderer,
@@ -156,26 +156,9 @@ render_draw_sprite :: proc(
     )
 }
 
-render_handle_resize :: proc(
-    renderer: ^Renderer,
-    new_size: Vec2i,
-    old_size: Vec2i,
-) {
-    // scale text
-    rect: sdl3.FRect
-    sdl3.GetRenderLogicalPresentationRect(renderer.sdl_renderer, &rect)
-
-    scale := rect.w / f32(old_size.x)
-
-    for id, font in renderer.fonts {
-        old_font_size := ttf.GetFontSize(font)
-        ttf.SetFontSize(font, old_font_size * scale)
-    }
-}
-
 // draw a circle and reset colour after
 // no idea how this works
-render_draw_circle :: proc(
+draw_circle :: proc(
     renderer: Renderer,
     radius: f32,
     cx, cy: f32,
@@ -184,7 +167,7 @@ render_draw_circle :: proc(
     b: sdl3.Uint8,
     a: sdl3.Uint8 = 255,
 ) {
-    new_x, new_y := render_world_to_screen(renderer, cx, cy)
+    new_x, new_y := world_to_screen(renderer, cx, cy)
 
     old_r, old_g, old_b, old_a: sdl3.Uint8
     sdl3.GetRenderDrawColor(

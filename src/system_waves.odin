@@ -110,7 +110,7 @@ draw_spawner_remaining :: proc(renderer: r.Renderer) {
         spawner := ecs.get_component(w, e, C_Spawner)
         spawner_pos := ecs.get_component(w, e, C_Transform).pos
 
-        r.render_draw_text(
+        r.draw_text(
             renderer,
             fontIDs[.debug],
             fmt.tprint(spawner.enemies_left),

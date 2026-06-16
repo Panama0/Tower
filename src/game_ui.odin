@@ -100,27 +100,22 @@ ui_draw_hud :: proc(renderer: r.Renderer) {
                 pos.w + HOTBAR_SELECTED_WIDTH,
                 pos.h + HOTBAR_SELECTED_WIDTH,
             }
-            r.render_draw_rect(renderer, &pos_selected, 0, 0, 0)
+            r.draw_rect(renderer, &pos_selected, 0, 0, 0)
         }
 
         // draw regular empty slots
-        r.render_draw_rect(renderer, &pos, 150, 150, 150, 150)
+        r.draw_rect(renderer, &pos, 150, 150, 150, 150)
 
         // draw item
         item_at_slot := ui_state.hotbar_items[i]
         if item_at_slot != .none {
             spr := item_data[item_at_slot].sprite
 
-            r.render_draw_sprite(
-                renderer,
-                sprite_ids[spr],
-                {pos.x, pos.y},
-                .top_left,
-            )
+            r.draw_sprite(renderer, sprite_ids[spr], {pos.x, pos.y}, .top_left)
         }
 
         // draw text on top left
-        r.render_draw_text(
+        r.draw_text(
             renderer,
             fontIDs[.normal],
             fmt.tprintf("%v", i + 1),
@@ -138,7 +133,7 @@ ui_draw_hud :: proc(renderer: r.Renderer) {
             cooldown_text,
             context.temp_allocator,
         )
-        r.render_draw_text(
+        r.draw_text(
             renderer,
             fontIDs[.normal],
             cooldown_text,
@@ -148,7 +143,7 @@ ui_draw_hud :: proc(renderer: r.Renderer) {
 
     }
     current_wave := fmt.tprintf("Round: %v", state.gs.waves.current_wave)
-    r.render_draw_text(
+    r.draw_text(
         renderer,
         fontIDs[.normal],
         current_wave,
@@ -158,7 +153,7 @@ ui_draw_hud :: proc(renderer: r.Renderer) {
 
     time_left := state.gs.waves.timer.next_done_time - state.gs.running_seconds
     time_left_label := fmt.tprintf("Time Left: %.1f", time_left)
-    r.render_draw_text(
+    r.draw_text(
         renderer,
         fontIDs[.normal],
         time_left_label,

@@ -59,7 +59,7 @@ pathfinding_draw_graph :: proc(renderer: r.Renderer, graph: PathfindingGraph) {
         }
 
         // draw the nodes
-        r.render_draw_rect(renderer, &cell_rect, 0, 0, 0, 255, false)
+        r.draw_rect(renderer, &cell_rect, 0, 0, 0, 255, false)
 
         // unweighted nodes can be ignored
         if node.weight != 0 {
@@ -80,7 +80,7 @@ pathfinding_draw_graph :: proc(renderer: r.Renderer, graph: PathfindingGraph) {
             // truncate to uint
             sdl_colour := cast([4]sdl3.Uint8)lerped
 
-            r.render_draw_rect(
+            r.draw_rect(
                 renderer,
                 &cell_rect,
                 sdl_colour.r,

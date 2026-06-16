@@ -258,7 +258,7 @@ handle_sdl_events :: proc(window: ^sdl3.Window, renderer: ^r.Renderer) {
         // system
         case .WINDOW_RESIZED:
             new_size := Vec2i{ev.window.data1, ev.window.data2}
-            r.render_handle_resize(renderer, new_size, state.old_win_size)
+            r.handle_resize(renderer, new_size, state.old_win_size)
             state.old_win_size = new_size
 
         case .QUIT:
