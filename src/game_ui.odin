@@ -1,7 +1,8 @@
 package main
 
+import "core:fmt"
 import "core:log"
-import "core:strconv"
+import "core:strings"
 import "vendor:sdl3"
 
 import r "render"
@@ -119,13 +120,50 @@ ui_draw_hud :: proc(renderer: r.Renderer) {
         }
 
         // draw text on top left
-        b: [4]byte
         r.render_draw_text(
             renderer,
             fontIDs[.normal],
-            strconv.write_int(b[:], i64(i + 1), 10),
+            fmt.tprintf("%v", i + 1),
             pos.x,
             pos.y,
         )
     }
+
+    // draw round and timer
+
+
+    if state.gs.waves.state == .cooldown {
+        cooldown_text := fmt.tprint(state.gs.waves.state)
+        cooldown_text = strings.to_pascal_case(
+            cooldown_text,
+            context.temp_allocator,
+        )
+        r.render_draw_text(
+            renderer,
+            fontIDs[.normal],
+            cooldown_text,
+            0,
+            f32(ui_state.h) - 64,
+        )
+
+    }
+    current_wave := fmt.tprintf("Round: %v", state.gs.waves.current_wave)
+    r.render_draw_text(
+        renderer,
+        fontIDs[.normal],
+        current_wave,
+        0,
+        f32(ui_state.h) - 48,
+    )
+
+    time_left := state.gs.waves.timer.next_done_time - state.gs.running_seconds
+    time_left_label := fmt.tprintf("Time Left: %.1f", time_left)
+    r.render_draw_text(
+        renderer,
+        fontIDs[.normal],
+        time_left_label,
+        0,
+        f32(ui_state.h) - 32,
+    )
+
 }

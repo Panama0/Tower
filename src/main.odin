@@ -122,7 +122,7 @@ GRID_SIZE :: 16
 
 State :: struct {
     gs:               GameState,
-    dt:               f32,
+    dt:               f64,
     running:          bool,
     input:            InputState,
     occurred_actions: [Action]bool,
@@ -132,7 +132,7 @@ State :: struct {
 }
 
 GameState :: struct {
-    ticks:            u64,
+    running_seconds:  f64,
     cam_pos:          Vec2,
     world:            ^ecs.World,
     entity_free_list: [dynamic]ecs.Entity,
@@ -142,6 +142,7 @@ GameState :: struct {
     place_grid:       Grid,
     game_camera:      r.Camera,
     ui_camera:        r.Camera,
+    waves:            Waves,
 }
 
 state: State
@@ -223,7 +224,7 @@ spawn_tower :: proc(pos: Vec2) -> ecs.Entity {
     spr.name = item_data[.tower].sprite
 
     timer := ecs.add_component(w, e, C_Tower)
-    timer.timer.interval_ms = 300
+    timer.timer.interval = 1
 
     tags := ecs.add_component(w, e, C_PathfindingTags)
     tags.tags += {.impassible}
@@ -268,7 +269,7 @@ spawn_spawner :: proc(pos: Vec2) -> ecs.Entity {
     spr.name = .tile4
 
     timer := ecs.add_component(w, e, C_Spawner)
-    timer.timer.interval_ms = 5500
+    timer.timer.interval = 1.0
 
     return e
 }
@@ -303,7 +304,7 @@ spawn_enemy :: proc(pos: Vec2) -> ecs.Entity {
     attack := ecs.add_component(w, e, C_Attack)
     attack.damage = 10
     attack.knockback = 350
-    attack.cooldown_timer.interval_ms = 1000
+    attack.cooldown_timer.interval = 1.0
 
     follower := ecs.add_component(w, e, C_PathFollower)
     follower.target = state.gs.player
@@ -430,7 +431,9 @@ main :: proc() {
     state.gs.place_grid = make_grid({LOGICAL_WIDTH, LOGICAL_HEIGHT}, GRID_SIZE)
 
     // temp
-    // spawn_spawner({450, 150})
+    spawn_spawner({150, 150})
+    spawn_spawner({250, 150})
+    spawn_spawner({350, 150})
     enemy := spawn_enemy({450, 150})
     ui_set_hotbar_items(
         {
@@ -446,6 +449,8 @@ main :: proc() {
             .none,
         },
     )
+
+    wave_init(&state.gs.waves)
 
     //TODO: remove this? need to store graphs centrally somewhere based on collider
     w := state.gs.world
@@ -463,15 +468,15 @@ main :: proc() {
 
     // ---
 
-    last_tick: u64 = sdl3.GetTicks()
-    current_tick: u64
+    last_tick: u64 = sdl3.GetTicksNS()
+    current_tick: u64 = sdl3.GetTicksNS()
 
     state.running = true
     for state.running {
         last_tick = current_tick
-        current_tick = sdl3.GetTicks()
+        current_tick = sdl3.GetTicksNS()
 
-        state.dt = f32(current_tick - last_tick) / 1000
+        state.dt = f64(current_tick - last_tick) / 1_000_000_000
 
         handle_sdl_events(window, &renderer)
 
@@ -555,6 +560,8 @@ main :: proc() {
 
         // update ent
 
+        wave_dispatch(&state.gs.waves)
+
         input()
 
         //enemy()
@@ -591,12 +598,12 @@ main :: proc() {
 
         // debug draws
         // grid_draw(renderer, state.gs.place_grid)
-        pathfinding_draw_graph(renderer, graph^)
-        draw_waypoints(renderer)
-        draw_colliders(renderer)
-        draw_origins(renderer)
+        //pathfinding_draw_graph(renderer, graph^)
+        //draw_waypoints(renderer)
+        //draw_colliders(renderer)
+        // draw_origins(renderer)
+        draw_spawner_remaining(renderer)
 
-        // world bounds
         r.render_draw_rect(renderer, &world_bounds, 0, 255, 0, 255, false)
 
         // draw ui
@@ -610,7 +617,8 @@ main :: proc() {
 
         r.render_end_frame(&renderer)
 
-        state.gs.ticks += 1
+        // when we implement pause, just dont increment
+        state.gs.running_seconds += state.dt
 
         free_dead_ents()
         reset_input_state(&state.input)

@@ -80,7 +80,7 @@ add_entity :: proc(w: ^World) -> Entity {
     e := w.next_id
     w.next_id += 1
 
-    assert(w.next_id != max(Entity), "MAX ENTITIES REACHED")
+    assert(w.next_id <= max(Entity), "MAX ENTITIES REACHED")
     return e
 }
 

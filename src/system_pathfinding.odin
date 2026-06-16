@@ -59,7 +59,7 @@ pathfinding_draw_graph :: proc(renderer: r.Renderer, graph: PathfindingGraph) {
         }
 
         // draw the nodes
-        r.render_draw_rect(renderer, &cell_rect, 0, 0, 0, 100, false)
+        r.render_draw_rect(renderer, &cell_rect, 0, 0, 0, 255, false)
 
         // unweighted nodes can be ignored
         if node.weight != 0 {

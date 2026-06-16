@@ -41,15 +41,29 @@ aabb_to_world :: proc(aabb: sdl3.FRect, point: Vec2) -> sdl3.FRect {
 }
 
 
+Timer :: struct {
+    interval:       f64,
+    next_done_time: f64,
+}
+
 // returns true if the timer is done and restarts it
 timer_done_reset :: proc(timer: ^Timer) -> bool {
-    current_time := sdl3.GetTicks()
+    current_time := state.gs.running_seconds
     if current_time >= timer.next_done_time {
-        timer.next_done_time = current_time + timer.interval_ms
+        timer.next_done_time = current_time + timer.interval
         return true
     }
 
     return false
+}
+
+timer_done :: proc(timer: Timer) -> bool {
+    return state.gs.running_seconds >= timer.next_done_time
+}
+
+timer_set :: proc(timer: ^Timer, interval: f64) {
+    timer.interval = interval
+    timer.next_done_time = state.gs.running_seconds + interval
 }
 
 point_in_circle :: proc(

@@ -11,10 +11,6 @@ FlipMode :: enum {
     rotate,
 }
 
-Timer :: struct {
-    interval_ms:    u64,
-    next_done_time: u64,
-}
 
 C_Sprite :: struct {
     name:         SpriteName,
@@ -51,7 +47,8 @@ C_Tower :: struct {
 }
 
 C_Spawner :: struct {
-    timer: Timer,
+    enemies_left: int,
+    timer:        Timer,
 }
 
 C_Projectile :: struct {

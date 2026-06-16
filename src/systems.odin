@@ -99,20 +99,6 @@ towers :: proc() {
     }
 }
 
-spawner :: proc() {
-    w := state.gs.world
-    spawners := ecs.get_entities_with(w, C_Spawner)
-
-    for e in spawners {
-        spawner := ecs.get_component(w, e, C_Spawner)
-        spawner_pos := ecs.get_component(w, e, C_Transform).pos
-
-        if timer_done_reset(&spawner.timer) {
-            spawn_enemy(spawner_pos)
-        }
-    }
-}
-
 enemy :: proc() {
     w := state.gs.world
     query := ecs.query_mask(w, C_Enemy, C_Transform, C_MovementController)
@@ -138,7 +124,7 @@ movement_control :: proc() {
         mc := ecs.get_component(w, e, C_MovementController)
 
         // add the desired movement direction to velocity
-        transform.vel += mc.target_dir * mc.speed * state.dt
+        transform.vel += mc.target_dir * mc.speed * f32(state.dt)
     }
 
     // update transforms
@@ -255,9 +241,9 @@ pulse :: proc() {
         pulse := ecs.get_component(w, e, C_Pulse)
         transform := ecs.get_component(w, e, C_Transform)
 
-        transform.vel += pulse.vel * state.dt
+        transform.vel += pulse.vel * f32(state.dt)
 
-        decay_factor := math.max(0, 1 - pulse.decay * state.dt)
+        decay_factor := math.max(0, 1 - pulse.decay * f32(state.dt))
         pulse.vel *= decay_factor
 
         // remove if small enough
