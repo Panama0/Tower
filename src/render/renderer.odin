@@ -84,7 +84,7 @@ renderer_init :: proc(
     logical_size: Vec2i,
 ) {
     renderer.sdl_renderer = sdl3.CreateRenderer(window, "")
-    if renderer.sdl_renderer == nil do log.panicf("Could not create renderer with errror: %v", sdl3.GetError())
+    if renderer.sdl_renderer == nil do log.panicf("Could not create renderer with error: %v", sdl3.GetError())
 
     renderer.logical_size = logical_size
 

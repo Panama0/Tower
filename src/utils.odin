@@ -2,6 +2,7 @@ package main
 
 import "vendor:sdl3"
 
+Colour :: [4]u8
 
 Direction :: enum {
     north,
@@ -88,4 +89,17 @@ rects_intersect :: proc(first, second: sdl3.FRect) -> bool {
         (first.y < second.y + second.h) &&
         (first.y + first.h > second.y) \
     )
+}
+
+point_rect_intersect :: proc(point: Vec2, rect_pos: Vec2, w, h: f32) -> bool {
+    return(
+        point.x >= rect_pos.x &&
+        point.x <= rect_pos.x + w &&
+        point.y >= rect_pos.y &&
+        point.y <= rect_pos.y + h \
+    )
+}
+
+map_range_values :: proc(value, in_min, in_max, out_min, out_max: f64) -> f64 {
+    return (value - in_min) / (in_max - in_min) * (out_max - out_min) + out_min
 }

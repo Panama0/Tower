@@ -427,6 +427,7 @@ main :: proc() {
     state.gs.player = spawn_player()
 
     ui_init(LOGICAL_WIDTH, LOGICAL_HEIGHT)
+    init(&renderer)
 
     state.gs.place_grid = make_grid({LOGICAL_WIDTH, LOGICAL_HEIGHT}, GRID_SIZE)
 
@@ -481,6 +482,7 @@ main :: proc() {
         handle_sdl_events(window, &renderer)
 
         // ui must be first as it consumes keys
+        ui_consume_input()
         ui_update()
 
         // register actions
@@ -614,6 +616,24 @@ main :: proc() {
 
         fps_string := fmt.tprintf("%.2f", 1 / state.dt)
         r.draw_text(renderer, fontIDs[.debug], fps_string, 10, 10)
+
+        // testing
+        ui_window("Win1", {10, 10, 200, 200})
+        if ui_button("test") {
+            log.debug("test")
+        }
+        if ui_button("test2") {
+            log.debug("test2")
+        }
+        @(static) boo := false
+        ui_check_box("Check", &boo)
+        @(static) val := 1.0
+        ui_slider("slider", &val, -10, 100)
+        ui_text(
+            "some text that is very long affsfsfsdfsfnd goes on forever this is the mosh power",
+            .debug,
+            {255, 255, 255, 255},
+        )
 
         r.renderer_end_frame(&renderer)
 

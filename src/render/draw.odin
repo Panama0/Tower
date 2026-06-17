@@ -8,15 +8,13 @@ import "vendor:sdl3"
 import ttf "vendor:sdl3/ttf"
 
 
-// draw text at native res
-draw_text :: proc(
+@(private = "file")
+render_text :: proc(
     renderer: Renderer,
-    fontID: AssetID,
-    text: string,
+    surface: ^sdl3.Surface,
     x, y: f32,
-    colour: sdl3.Color = {0, 0, 0, 255},
+    clip_w, clip_h: f32,
 ) {
-    font := renderer.fonts[fontID]
     // save the old logical presentation settings
     logical_w, logical_h: i32
     mode: sdl3.RendererLogicalPresentation
@@ -40,6 +38,11 @@ draw_text :: proc(
         &win_y,
     )
 
+
+    output_w, output_h: i32
+    sdl3.GetRenderOutputSize(renderer.sdl_renderer, &output_w, &output_h)
+    scale := f32(output_w / logical_w)
+
     // clear out logical presentation and defer restoration
     sdl3.SetRenderLogicalPresentation(renderer.sdl_renderer, 0, 0, .DISABLED)
     defer sdl3.SetRenderLogicalPresentation(
@@ -48,6 +51,59 @@ draw_text :: proc(
         logical_h,
         mode,
     )
+
+    texture := sdl3.CreateTextureFromSurface(renderer.sdl_renderer, surface)
+
+    if texture == nil {
+        log.debugf("Failed to create texture with error: %v", sdl3.GetError())
+        return
+    }
+    defer sdl3.DestroyTexture(texture)
+
+    src_w := f32(surface.w)
+    src_h := f32(surface.h)
+    if clip_w > 0 do src_w = min(clip_w * scale, f32(surface.w))
+    if clip_h > 0 do src_h = min(clip_h * scale, f32(surface.h))
+
+    src := sdl3.FRect{0, 0, src_w, src_h}
+    dst := sdl3.FRect {
+        x = win_x,
+        y = win_y,
+        w = src_w,
+        h = src_h,
+    }
+
+    sdl3.RenderTexture(renderer.sdl_renderer, texture, &src, &dst)
+}
+
+// draw text at native res, no wrapping
+// returns the dimensions of the text for easy formatting
+draw_text :: proc(
+    renderer: Renderer,
+    fontID: AssetID,
+    text: string,
+    x, y: f32,
+    colour: sdl3.Color = {0, 0, 0, 255},
+    max_w: f32 = 0,
+    max_h: f32 = 0,
+) -> (
+    text_w: f32,
+    text_h: f32,
+) {
+    font := renderer.fonts[fontID]
+
+    logical_w, logical_h: i32
+    mode: sdl3.RendererLogicalPresentation
+    sdl3.GetRenderLogicalPresentation(
+        renderer.sdl_renderer,
+        &logical_w,
+        &logical_h,
+        &mode,
+    )
+
+    output_w, output_h: i32
+    sdl3.GetRenderOutputSize(renderer.sdl_renderer, &output_w, &output_h)
+    scale := f32(output_w / logical_w)
 
     surface := ttf.RenderText_Blended(
         font,
@@ -66,24 +122,66 @@ draw_text :: proc(
     }
     defer sdl3.DestroySurface(surface)
 
-    texture := sdl3.CreateTextureFromSurface(renderer.sdl_renderer, surface)
+    text_w = f32(surface.w) / scale
+    text_h = f32(surface.h) / scale
 
-    if texture == nil {
-        log.debugf("Failed to create texture with error: %v", sdl3.GetError())
+    render_text(renderer, surface, x, y, max_w, max_h)
+    return
+}
+
+// draw text at native res with word wrapping
+// returns the dimensions of the text for easy formatting
+draw_text_wrapped :: proc(
+    renderer: Renderer,
+    fontID: AssetID,
+    text: string,
+    x, y: f32,
+    wrap_width_px: f32,
+    colour: sdl3.Color = {0, 0, 0, 255},
+) -> (
+    text_w: f32,
+    text_h: f32,
+) {
+    font := renderer.fonts[fontID]
+
+    logical_w, logical_h: i32
+    mode: sdl3.RendererLogicalPresentation
+    sdl3.GetRenderLogicalPresentation(
+        renderer.sdl_renderer,
+        &logical_w,
+        &logical_h,
+        &mode,
+    )
+
+    output_w, output_h: i32
+    sdl3.GetRenderOutputSize(renderer.sdl_renderer, &output_w, &output_h)
+    scale := f32(output_w / logical_w)
+
+    wrap_width_screen := wrap_width_px * scale
+
+    surface := ttf.RenderText_Blended_Wrapped(
+        font,
+        strings.clone_to_cstring(text, context.temp_allocator),
+        0,
+        colour,
+        i32(wrap_width_screen),
+    )
+
+    if surface == nil {
+        log.debugf(
+            "Failed to render text '%v' with error: %v",
+            text,
+            sdl3.GetError(),
+        )
         return
     }
-    defer sdl3.DestroyTexture(texture)
+    defer sdl3.DestroySurface(surface)
 
-    // remember that we are drawing it at the window x and y because we are now at native res
-    dst := sdl3.FRect {
-        x = win_x,
-        y = win_y,
-        w = f32(surface.w),
-        h = f32(surface.h),
-    }
+    text_w = f32(surface.w) / scale
+    text_h = f32(surface.h) / scale
 
-
-    sdl3.RenderTexture(renderer.sdl_renderer, texture, nil, &dst)
+    render_text(renderer, surface, x, y, 0, 0)
+    return
 }
 
 
