@@ -635,6 +635,11 @@ main :: proc() {
             {255, 255, 255, 255},
         )
 
+        @(static) words: [80]byte
+        b := words[:]
+        @(static) cursor: int
+        ui_textinput("testinput", b, 80, &cursor)
+
         r.renderer_end_frame(&renderer)
 
         // when we implement pause, just dont increment

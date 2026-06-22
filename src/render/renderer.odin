@@ -64,7 +64,7 @@ Renderer :: struct {
     arena:        vmem.Arena,
 }
 
-//TODO: Error handling
+// TODO: Error handling
 @(private = "file")
 next_id :: proc(renderer: ^Renderer) -> (id: AssetID) {
     if queue.len(renderer.freeIDs) > 0 {

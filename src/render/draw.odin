@@ -1,5 +1,6 @@
 package render
 
+import "core:c"
 import "core:log"
 import "core:math"
 import "core:strings"
@@ -13,7 +14,7 @@ render_text :: proc(
     renderer: Renderer,
     surface: ^sdl3.Surface,
     x, y: f32,
-    clip_w, clip_h: f32,
+    src_offset := sdl3.FRect{},
 ) {
     // save the old logical presentation settings
     logical_w, logical_h: i32
@@ -60,20 +61,66 @@ render_text :: proc(
     }
     defer sdl3.DestroyTexture(texture)
 
-    src_w := f32(surface.w)
-    src_h := f32(surface.h)
-    if clip_w > 0 do src_w = min(clip_w * scale, f32(surface.w))
-    if clip_h > 0 do src_h = min(clip_h * scale, f32(surface.h))
+    src_x := src_offset.x * scale
+    src_y := src_offset.y * scale
+    // if no offset is given, default to the full size of the surface
+    src_w := src_offset.w != 0 ? src_offset.w * scale : f32(surface.w) - src_x
+    src_h := src_offset.h != 0 ? src_offset.h * scale : f32(surface.h) - src_y
 
-    src := sdl3.FRect{0, 0, src_w, src_h}
+    // clamped to size of texture
+    src := sdl3.FRect {
+        src_x,
+        src_y,
+        min(src_w, f32(surface.w) - src_x),
+        min(src_h, f32(surface.h) - src_y),
+    }
+
     dst := sdl3.FRect {
         x = win_x,
         y = win_y,
-        w = src_w,
-        h = src_h,
+        w = src.w,
+        h = src.h,
     }
 
     sdl3.RenderTexture(renderer.sdl_renderer, texture, &src, &dst)
+}
+
+measure_text :: proc(
+    renderer: Renderer,
+    fontID: AssetID,
+    text: string,
+) -> (
+    text_w: f32,
+    text_h: f32,
+) {
+    font := renderer.fonts[fontID]
+
+    logical_w, logical_h: i32
+    mode: sdl3.RendererLogicalPresentation
+    sdl3.GetRenderLogicalPresentation(
+        renderer.sdl_renderer,
+        &logical_w,
+        &logical_h,
+        &mode,
+    )
+
+    output_w, output_h: i32
+    sdl3.GetRenderOutputSize(renderer.sdl_renderer, &output_w, &output_h)
+    scale := f32(output_w / logical_w)
+
+    w, h: c.int
+    ttf.GetStringSize(
+        font,
+        strings.clone_to_cstring(text, context.temp_allocator),
+        c.size_t(len(text)),
+        &w,
+        &h,
+    )
+
+
+    text_w = f32(w) / scale
+    text_h = f32(h) / scale
+    return
 }
 
 // draw text at native res, no wrapping
@@ -84,8 +131,7 @@ draw_text :: proc(
     text: string,
     x, y: f32,
     colour: sdl3.Color = {0, 0, 0, 255},
-    max_w: f32 = 0,
-    max_h: f32 = 0,
+    src_offset := sdl3.FRect{},
 ) -> (
     text_w: f32,
     text_h: f32,
@@ -125,7 +171,7 @@ draw_text :: proc(
     text_w = f32(surface.w) / scale
     text_h = f32(surface.h) / scale
 
-    render_text(renderer, surface, x, y, max_w, max_h)
+    render_text(renderer, surface, x, y, src_offset)
     return
 }
 
@@ -180,7 +226,7 @@ draw_text_wrapped :: proc(
     text_w = f32(surface.w) / scale
     text_h = f32(surface.h) / scale
 
-    render_text(renderer, surface, x, y, 0, 0)
+    render_text(renderer, surface, x, y)
     return
 }
 

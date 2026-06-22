@@ -53,7 +53,7 @@ ui_update :: proc() {
             ui_state.hotbar_index = slot
             state.gs.selected_item = ui_state.hotbar_items[slot]
 
-            consume_key_pressed(btn)
+            // consume_key_pressed(btn)
         }
     }
 

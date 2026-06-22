@@ -193,6 +193,15 @@ Button :: enum {
     M_RIGHT = 202,
     SC_DOWN = 203,
     SC_UP = 204,
+
+    // modifiers
+    LCTRL = 224,
+    LSHIFT = 225,
+    LALT = 226, /**< alt, option */
+    LGUI = 227, /**< windows, command (apple), meta */
+    RCTRL = 228,
+    RSHIFT = 229,
+    RALT = 230, /**< alt gr, option */
     count,
 }
 
@@ -300,8 +309,6 @@ handle_sdl_events :: proc(window: ^sdl3.Window, renderer: ^r.Renderer) {
             if ev.key.repeat {
                 state.input.keys[ev.key.scancode] += {.repeat}
             }
-
         }
-
     }
 }
