@@ -631,6 +631,7 @@ main :: proc() {
         ui_slider("slider", &val, -10, 100)
         ui_text(
             "some text that is very long affsfsfsdfsfnd goes on forever this is the mosh power",
+            0,
             .debug,
             {255, 255, 255, 255},
         )

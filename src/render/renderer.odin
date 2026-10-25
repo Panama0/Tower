@@ -190,7 +190,10 @@ generate_atlas :: proc(renderer: ^Renderer) {
     // load in sprites
 
     allocator := vmem.arena_allocator(&renderer.arena)
-    for spriteID, &sprite in renderer.sprites {
+    //FIX: Revert to by-reference iteration once Odin includes the fix for https://github.com/odin-lang/Odin/issues/7737 (PR #7795).
+    // for spriteID, &sprite in renderer.sprites {
+    for spriteID in renderer.sprites {
+        sprite := &renderer.sprites[spriteID]
         path := fmt.aprint(
             img_dir,
             sprite.file_name,

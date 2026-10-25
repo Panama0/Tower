@@ -58,6 +58,45 @@ Window :: struct {
     bounds: Rect,
 }
 
+UIStyle :: struct {
+    // these control cursor movement aka gaps
+    base_width:           f32,
+    base_height:          f32,
+    long_width:           f32, // For long widgets like text input and slider
+    // styles
+    window_colour:        [4]u8,
+    widget_colour:        [4]u8,
+    accent_colour:        [4]u8,
+    text_colour:          [4]u8,
+    input_text_colour:    [4]u8,
+    cursor_colour:        [4]u8,
+
+    // Element-specific items
+    checkbox_inner_width: f32,
+    slider_inner_width:   f32,
+}
+
+default_style := UIStyle {
+    base_width           = 32,
+    base_height          = 32,
+    long_width           = 128,
+    window_colour        = {0, 0, 0, 255},
+    widget_colour        = {100, 100, 100, 255},
+    accent_colour        = {0, 200, 0, 255},
+    text_colour          = {0, 0, 0, 255},
+    input_text_colour    = {255, 0, 0, 255},
+    cursor_colour        = {255, 255, 255, 255},
+
+    // Element-specific items
+    checkbox_inner_width = 16,
+    slider_inner_width   = 16,
+}
+
+UILayout :: enum {
+    Vertical,
+    Horizontal,
+}
+
 UIContext :: struct {
     current_win:        string,
     //TODO:
@@ -67,8 +106,11 @@ UIContext :: struct {
     cursor_pos:         Vec2,
     line_gap:           f32,
     renderer:           ^r.Renderer,
+    //TODO: stack
+    style:              UIStyle,
+    layout:             UILayout,
     // input
-    // for future, user call call something like wants_mouse(ui)
+    // for future, user can call something like wants_mouse(ui)
     //want_mouse: bool,
     //want_kb: bool,
     mouse_pos:          Vec2,
@@ -81,6 +123,7 @@ ctx: UIContext
 init :: proc(renderer: ^r.Renderer) {
     ctx = UIContext {
         renderer = renderer,
+        style    = default_style,
     }
 
     ctx.line_gap = 3
@@ -90,7 +133,7 @@ shutdown :: proc() {
 
 }
 
-//TODO: consume
+//TODO: consume ui input
 ui_consume_input :: proc() {
     ctx.clicked = false
 
@@ -104,14 +147,27 @@ ui_consume_input :: proc() {
     }
 }
 
-ui_advance_cursor :: proc(height: f32) {
+ui_advance_cursor :: proc(width, height: f32) {
     win := ctx.windows[ctx.current_win]
-    ctx.cursor_pos.x = win.bounds.x
-    ctx.cursor_pos.y += height + ctx.line_gap
+
+    switch ctx.layout {
+    case .Vertical:
+        ctx.cursor_pos.x = win.bounds.x
+        ctx.cursor_pos.y += height + ctx.line_gap
+    case .Horizontal:
+        ctx.cursor_pos.x += width + ctx.line_gap
+    }
 }
 
 ui_get_cursor_pos :: proc() -> Vec2 {
     return ctx.cursor_pos
+}
+
+
+//TODO: make push in the future
+
+ui_set_layout :: proc(layout: UILayout) {
+    ctx.layout = layout
 }
 
 // WIDGETS
@@ -127,7 +183,7 @@ ui_window :: proc(title: string, bounds: Rect) {
 
     // draw
     rect := sdl3.FRect{**bounds.xyzw}
-    r.draw_rect(ctx.renderer^, &rect, 0, 0, 0)
+    r.draw_rect(ctx.renderer^, &rect, **ctx.style.window_colour)
 }
 
 ui_window_end :: proc() {
@@ -135,16 +191,26 @@ ui_window_end :: proc() {
 }
 
 ui_button :: proc(label: string) -> bool {
-    HEIGHT :: 32
     // draw
-    rect := sdl3.FRect{ctx.cursor_pos.x, ctx.cursor_pos.y, 32, 32}
-    r.draw_rect(ctx.renderer^, &rect, 100, 100, 100)
+    rect := sdl3.FRect {
+        ctx.cursor_pos.x,
+        ctx.cursor_pos.y,
+        ctx.style.base_width,
+        ctx.style.base_height,
+    }
+    r.draw_rect(ctx.renderer^, &rect, **ctx.style.widget_colour)
 
     // draw the text
-    r.draw_text(ctx.renderer^, fontIDs[.debug], label, **ctx.cursor_pos)
+    r.draw_text(
+        ctx.renderer^,
+        fontIDs[.debug],
+        label,
+        **ctx.cursor_pos,
+        sdl3.Color{**ctx.style.text_colour},
+    )
 
     // advance cursor
-    ui_advance_cursor(HEIGHT)
+    ui_advance_cursor(rect.w, rect.h)
 
     if ctx.clicked {
         // check hit
@@ -162,27 +228,30 @@ ui_button :: proc(label: string) -> bool {
 }
 
 ui_check_box :: proc(id: string, data: ^bool) {
-    HEIGHT :: 32
     // draw
     // outer
-    rect := sdl3.FRect{ctx.cursor_pos.x, ctx.cursor_pos.y, 32, 32}
-    r.draw_rect(ctx.renderer^, &rect, 100, 100, 100)
+    rect := sdl3.FRect {
+        ctx.cursor_pos.x,
+        ctx.cursor_pos.y,
+        ctx.style.base_width,
+        ctx.style.base_height,
+    }
+    r.draw_rect(ctx.renderer^, &rect, **ctx.style.widget_colour)
 
 
     // inner
-    INNER_WIDTH :: 16
     if data^ {
         rect := sdl3.FRect {
             ctx.cursor_pos.x,
             ctx.cursor_pos.y,
-            INNER_WIDTH,
-            INNER_WIDTH,
+            ctx.style.checkbox_inner_width,
+            ctx.style.checkbox_inner_width,
         }
-        r.draw_rect(ctx.renderer^, &rect, 0, 200, 0)
+        r.draw_rect(ctx.renderer^, &rect, **ctx.style.accent_colour)
     }
 
     // advance cursor
-    ui_advance_cursor(HEIGHT)
+    ui_advance_cursor(rect.w, rect.h)
 
     if ctx.clicked {
         // check hit
@@ -199,14 +268,17 @@ ui_check_box :: proc(id: string, data: ^bool) {
 }
 
 ui_slider :: proc(id: string, data: ^f64, min, max: f64) {
-    HEIGHT :: 32
     // draw
     // outer
-    rect := sdl3.FRect{ctx.cursor_pos.x, ctx.cursor_pos.y, 128, 32}
-    r.draw_rect(ctx.renderer^, &rect, 100, 100, 100)
+    rect := sdl3.FRect {
+        ctx.cursor_pos.x,
+        ctx.cursor_pos.y,
+        ctx.style.long_width,
+        ctx.style.base_height,
+    }
+    r.draw_rect(ctx.renderer^, &rect, **ctx.style.widget_colour)
 
-    INNER_WIDTH :: 16
-    rect_max := f64(rect.x) + f64(rect.w) - INNER_WIDTH
+    rect_max := f64(rect.x) + f64(rect.w) - f64(ctx.style.slider_inner_width)
 
     // slider's pos in the rect
     slider_pos := map_range_values(data^, min, max, f64(rect.x), rect_max)
@@ -215,10 +287,10 @@ ui_slider :: proc(id: string, data: ^f64, min, max: f64) {
     rect_inner := sdl3.FRect {
         f32(slider_pos),
         ctx.cursor_pos.y,
-        INNER_WIDTH,
-        32,
+        ctx.style.slider_inner_width,
+        ctx.style.base_height,
     }
-    r.draw_rect(ctx.renderer^, &rect_inner, 0, 200, 0)
+    r.draw_rect(ctx.renderer^, &rect_inner, **ctx.style.accent_colour)
 
     // text
     r.draw_text(
@@ -226,10 +298,11 @@ ui_slider :: proc(id: string, data: ^f64, min, max: f64) {
         fontIDs[.debug],
         fmt.tprintf("%.2f", data^),
         **ctx.cursor_pos,
+        sdl3.Color{**ctx.style.text_colour},
     )
 
     // advance cursor
-    ui_advance_cursor(HEIGHT)
+    ui_advance_cursor(rect.w, rect.h)
 
     if ctx.down {
         // check hit
@@ -247,7 +320,7 @@ ui_slider :: proc(id: string, data: ^f64, min, max: f64) {
 
     if ctx.current_interacted == id {
         mouse_pos := map_range_values(
-            f64(ctx.mouse_pos.x) - INNER_WIDTH / 2,
+            f64(ctx.mouse_pos.x) - f64(ctx.style.slider_inner_width) / 2,
             f64(rect.x),
             rect_max,
             min,
@@ -260,33 +333,39 @@ ui_slider :: proc(id: string, data: ^f64, min, max: f64) {
     }
 }
 
-// text is wrapped to the window
-ui_text :: proc(text: string, style: FontStyle, colour := Colour{}) {
-    BASE_HEIGHT :: 32
+// text is always wrapped to the window
+ui_text :: proc(
+    text: string,
+    width: f32,
+    style: FontStyle,
+    colour := ctx.style.text_colour,
+) {
+    width := width
 
-    win := ctx.windows[ctx.current_win]
+    if width == 0 {
+        width = ctx.windows[ctx.current_win].bounds.w
+    }
+
     // draw
     w, h := r.draw_text_wrapped(
         ctx.renderer^,
         fontIDs[style],
         text,
         **ctx.cursor_pos,
-        win.bounds.w,
-        (sdl3.Color)(colour),
+        width,
+        sdl3.Color{**colour},
     )
 
     // advance cursor
-    if h > BASE_HEIGHT {
-        ui_advance_cursor(h)
-    } else {
-
-        ui_advance_cursor(BASE_HEIGHT)
-    }
+    ui_advance_cursor(w, max(h, ctx.style.base_height))
 }
 
-ui_textinput :: proc(id: string, buffer: []byte, len: int, cursor_pos: ^int) {
-    HEIGHT :: 32
-    WIDTH :: 128
+ui_textinput :: proc(
+    id: string,
+    buffer: []byte,
+    len: int,
+    txt_cursor_pos: ^int,
+) {
     upper := false
 
     // input
@@ -299,32 +378,32 @@ ui_textinput :: proc(id: string, buffer: []byte, len: int, cursor_pos: ^int) {
         for i in 4 ..= 39 {
             key := Button(i)
             if key_pressed(key) || key_repeat(key) {
-                if cursor_pos^ < len - 1 {
+                if txt_cursor_pos^ < len - 1 {
                     char: u8
                     if upper {
                         char = button_strings[key].upper
                     } else {
                         char = button_strings[key].lower
                     }
-                    buffer[cursor_pos^] = char
+                    buffer[txt_cursor_pos^] = char
 
-                    cursor_pos^ += 1
+                    txt_cursor_pos^ += 1
                 }
             }
         }
 
         // space
         if key_pressed(.SPACE) || key_repeat(.SPACE) {
-            if cursor_pos^ < len - 1 {
-                buffer[cursor_pos^] = ' '
-                cursor_pos^ += 1
+            if txt_cursor_pos^ < len - 1 {
+                buffer[txt_cursor_pos^] = ' '
+                txt_cursor_pos^ += 1
             }
         }
 
         if key_pressed(.BACKSPACE) || key_repeat(.BACKSPACE) {
-            if cursor_pos^ > 0 {
-                buffer[cursor_pos^ - 1] = 0
-                cursor_pos^ -= 1
+            if txt_cursor_pos^ > 0 {
+                buffer[txt_cursor_pos^ - 1] = 0
+                txt_cursor_pos^ -= 1
             }
         }
 
@@ -333,8 +412,13 @@ ui_textinput :: proc(id: string, buffer: []byte, len: int, cursor_pos: ^int) {
 
     // draw
     // outer
-    rect := sdl3.FRect{ctx.cursor_pos.x, ctx.cursor_pos.y, WIDTH, HEIGHT}
-    r.draw_rect(ctx.renderer^, &rect, 100, 100, 100)
+    rect := sdl3.FRect {
+        ctx.cursor_pos.x,
+        ctx.cursor_pos.y,
+        ctx.style.long_width,
+        ctx.style.base_height,
+    }
+    r.draw_rect(ctx.renderer^, &rect, **ctx.style.widget_colour)
 
     // text
     text_width, _ := r.measure_text(
@@ -351,10 +435,9 @@ ui_textinput :: proc(id: string, buffer: []byte, len: int, cursor_pos: ^int) {
             ctx.renderer^,
             fontIDs[.debug],
             transmute(string)buffer,
-            ctx.cursor_pos.x,
-            ctx.cursor_pos.y,
-            {255, 0, 0, 255},
-            {offset, 0, WIDTH, 0},
+            **ctx.cursor_pos,
+            sdl3.Color{**ctx.style.input_text_colour},
+            {offset, 0, ctx.style.long_width, 0},
         )
     }
 
@@ -370,7 +453,7 @@ ui_textinput :: proc(id: string, buffer: []byte, len: int, cursor_pos: ^int) {
             1,
             font_data[.debug].size_pt + 2,
         }
-        r.draw_rect(ctx.renderer^, &cursor_rect, 255, 255, 255)
+        r.draw_rect(ctx.renderer^, &cursor_rect, **ctx.style.cursor_colour)
     }
 
 
@@ -385,4 +468,11 @@ ui_textinput :: proc(id: string, buffer: []byte, len: int, cursor_pos: ^int) {
             ctx.current_interacted = id
         } else if ctx.current_interacted == id do ctx.current_interacted = ""
     }
+
+    // advance cursor
+    ui_advance_cursor(rect.w, rect.h)
 }
+
+// have to add:
+
+ui_image :: proc()

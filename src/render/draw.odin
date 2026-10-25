@@ -109,13 +109,7 @@ measure_text :: proc(
     scale := f32(output_w / logical_w)
 
     w, h: c.int
-    ttf.GetStringSize(
-        font,
-        strings.clone_to_cstring(text, context.temp_allocator),
-        c.size_t(len(text)),
-        &w,
-        &h,
-    )
+    ttf.GetStringSize(font, raw_data(text), c.size_t(len(text)), &w, &h)
 
 
     text_w = f32(w) / scale
@@ -153,8 +147,8 @@ draw_text :: proc(
 
     surface := ttf.RenderText_Blended(
         font,
-        strings.clone_to_cstring(text, context.temp_allocator),
-        0,
+        raw_data(text),
+        c.size_t(len(text)),
         colour,
     )
 
@@ -207,8 +201,8 @@ draw_text_wrapped :: proc(
 
     surface := ttf.RenderText_Blended_Wrapped(
         font,
-        strings.clone_to_cstring(text, context.temp_allocator),
-        0,
+        raw_data(text),
+        c.size_t(len(text)),
         colour,
         i32(wrap_width_screen),
     )

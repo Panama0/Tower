@@ -1,0 +1,9 @@
+// raddbg 0.9.29 project file
+
+name: tower
+target:
+{
+  executable: "out/debug/main"
+  working_directory: ""
+  enabled: 1
+}
