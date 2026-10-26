@@ -618,28 +618,102 @@ main :: proc() {
         r.draw_text(renderer, fontIDs[.debug], fps_string, 10, 10)
 
         // testing
-        ui_window("Win1", {10, 10, 200, 200})
-        if ui_button("test") {
-            log.debug("test")
+        @(static) show_ui_test := true
+        if key_pressed(.H) {
+            show_ui_test = !show_ui_test
         }
-        if ui_button("test2") {
-            log.debug("test2")
-        }
-        @(static) boo := false
-        ui_check_box("Check", &boo)
-        @(static) val := 1.0
-        ui_slider("slider", &val, -10, 100)
-        ui_text(
-            "some text that is very long affsfsfsdfsfnd goes on forever this is the mosh power",
-            0,
-            .debug,
-            {255, 255, 255, 255},
-        )
 
-        @(static) words: [80]byte
-        b := words[:]
-        @(static) cursor: int
-        ui_textinput("testinput", b, 80, &cursor)
+        if show_ui_test {
+            ui_window("UI tests", {10, 10, 620, 340})
+            if ui_button("test") {
+                log.debug("test")
+            }
+            if ui_button("test2") {
+                log.debug("test2")
+            }
+            @(static) boo := false
+            ui_check_box("Check", &boo)
+            @(static) val := 1.0
+            ui_slider("slider", &val, -10, 100)
+            ui_text(
+                "some text that is very long affsfsfsdfsfnd goes on forever this is the mosh power",
+                200,
+                .debug,
+                {255, 255, 255, 255},
+            )
+
+            @(static) words: [80]byte
+            b := words[:]
+            @(static) cursor: int
+            ui_textinput("testinput", b, 80, &cursor)
+
+            // Display an existing game sprite through the UI image API.
+            image_sprite := renderer.sprites[sprite_ids[.player]]
+            player_image := UIImage {
+                texture = renderer.atlas.texture,
+                source = {
+                    image_sprite.uv.x,
+                    image_sprite.uv.y,
+                    f32(image_sprite.width),
+                    f32(image_sprite.height),
+                },
+                use_source = true,
+            }
+            image_pos := ui_get_cursor_pos()
+            ui_image(player_image, 32, 32)
+
+            // Composite image button beside the standalone image.
+            button_pos := image_pos + Vec2{40, 0}
+            ui_set_cursor_pos(button_pos)
+            ui_begin_composite(ctx.style.base_width, ctx.style.base_height)
+            if ui_button("") {
+                log.debug("Player image button clicked")
+            }
+            ui_set_cursor_pos(button_pos + Vec2{
+                (ctx.style.base_width - 16) / 2,
+                (ctx.style.base_height - 16) / 2,
+            })
+            ui_image(player_image, 16, 16)
+            ui_set_cursor_pos(button_pos)
+            ui_end_composite()
+
+            // Horizontal layout testing.
+            ui_set_cursor_pos({230, 10})
+            ui_text("Horizontal layout test", 380, .debug, {255, 255, 255, 255})
+
+            ui_set_cursor_pos({230, ui_get_cursor_pos().y})
+            ui_push_horizontal()
+            ui_text(
+                "Tall row\nLine two\nLine three\nLine Four\nOneMOre\ng\ng",
+                120,
+                .debug,
+                {255, 255, 255, 255},
+            )
+            @(static) horizontal_checked := false
+            ui_check_box("horizontal_check", &horizontal_checked)
+            @(static) horizontal_value := 0.5
+            ui_slider("horizontal_slider", &horizontal_value, 0, 1)
+            ui_pop_horizontal()
+
+            ui_set_cursor_pos({230, ui_get_cursor_pos().y})
+            ui_text("Below the tallest item", 380, .debug, {255, 255, 255, 255})
+
+            ui_set_cursor_pos({230, ui_get_cursor_pos().y})
+            ui_push_horizontal()
+            if ui_button("A") {
+                log.debug("Horizontal button A")
+            }
+            if ui_button("B") {
+                log.debug("Horizontal button B")
+            }
+            @(static) second_row_checked := false
+            ui_check_box("horizontal_second_check", &second_row_checked)
+            ui_pop_horizontal()
+
+            ui_set_cursor_pos({230, ui_get_cursor_pos().y})
+            ui_text("Below the shorter row", 380, .debug, {255, 255, 255, 255})
+            ui_window_end()
+        }
 
         r.renderer_end_frame(&renderer)
 

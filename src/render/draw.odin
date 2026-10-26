@@ -93,6 +93,8 @@ measure_text :: proc(
     text_w: f32,
     text_h: f32,
 ) {
+    if len(text) == 0 do return
+
     font := renderer.fonts[fontID]
 
     logical_w, logical_h: i32
@@ -130,6 +132,8 @@ draw_text :: proc(
     text_w: f32,
     text_h: f32,
 ) {
+    if len(text) == 0 do return
+
     font := renderer.fonts[fontID]
 
     logical_w, logical_h: i32
@@ -182,6 +186,8 @@ draw_text_wrapped :: proc(
     text_w: f32,
     text_h: f32,
 ) {
+    if len(text) == 0 do return
+
     font := renderer.fonts[fontID]
 
     logical_w, logical_h: i32
